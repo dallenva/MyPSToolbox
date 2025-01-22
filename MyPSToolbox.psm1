@@ -812,19 +812,18 @@ SELECT
     END
     ,case
         when s.last_run_date = 0 then null
-        else convert(datetime,msdb.dbo.agent_datetime(s.last_run_date, s.Last_run_time))
+        else msdb.dbo.agent_datetime(h.run_date, h.run_time)
     end as 'StepLastRunDateTime'
-    ,H.run_duration as 'Seconds'
-    ,h.Server as 'ServerName'
+    ,H.run_duration as 'DurationSeconds'
 FROM
     sysjobhistory H
    INNER JOIN sysjobsteps S ON H.step_id = S.step_id AND H.job_id = S.job_id
    INNER JOIN sysjobs J ON J.job_id = H.job_id
 ORDER BY
-    H.job_id
-    ,H.run_date
-    ,H.run_time
-    ,S.step_id"
+    j.name
+    ,msdb.dbo.agent_datetime(h.run_date, h.run_time)
+    ,S.step_id
+    "
 
     # Query SPIDs
         Write-Verbose "Attempting to retreive jobs."
