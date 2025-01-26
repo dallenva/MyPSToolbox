@@ -62,6 +62,7 @@ function Invoke-SQL {
             Author:  David Allen
             Email: dallenva@gmail.com
         #>
+        [CmdletBinding()]
         Param([parameter(Mandatory)][string]$ServerInstance
                 ,[parameter(Mandatory)][string]$Query
                 ,[string]$Database
@@ -114,6 +115,7 @@ function Invoke-SQL {
                     $Info = "Record Count: " + $Data.Tables[0].Rows.Count
                     Write-Verbose "----------------------------------------------------------"
                     Write-Verbose $Info
+                    Write-Verbose "-- End Invoke-SQL ----------------------------------------"
     # Return Results
                     Return $Data.Tables[0]}
         }
@@ -463,6 +465,7 @@ Function Get-SQLSessionInfo {
         Author:  David Allen
         Email: dallenva@gmail.com
     #>
+    [CmdletBinding()]
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
@@ -617,6 +620,7 @@ Function Get-SQLJobInfo {
         Author:  David Allen
         Email: dallenva@gmail.com
     #>
+    [CmdletBinding()]
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
@@ -776,6 +780,7 @@ Function Get-SQLRunningJobs {
         Author:  David Allen
         Email: dallenva@gmail.com
     #>
+    [CmdletBinding()]
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
@@ -890,6 +895,7 @@ Function Get-SQLJobHistory {
         Author:  David Allen
         Email: dallenva@gmail.com
     #>
+    [CmdletBinding()]
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
