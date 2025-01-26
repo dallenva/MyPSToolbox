@@ -112,6 +112,7 @@ function Invoke-SQL {
                     Write-Verbose "----------------------------------------------------------"
                     Write-Verbose $Info
                     $Info = "Record Count: " + $Data.Tables[0].Rows.Count
+                    Write-Verbose "----------------------------------------------------------"
                     Write-Verbose $Info
     # Return Results
                     Return $Data.Tables[0]}
@@ -473,7 +474,7 @@ Function Get-SQLSessionInfo {
         ,[switch]$OnlyStatementText
         )
     Process {
-    # Setup parameters for invoke-sqlcmd
+    # Setup parameters for invoke-sql
         $SQLParams = @{
             ServerInstance= $ServerInstance
         }
@@ -540,7 +541,7 @@ ORDER BY
     s.session_id"
 
     # Query SPIDs
-        try{$RunningSessions = invoke-sqlcmd @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed."}
+        try{$RunningSessions = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed."}
     # If nothing returned allow for verbose message
         if ($RunningSessions.count -lt 0){Write-Verbose "No SPID(s) found"}else{Write-Verbose ($RunningSessions.count.ToString() + " SPID(s) Found")}
 
@@ -624,10 +625,9 @@ Function Get-SQLJobInfo {
         ,[string]$SearchName
         )
     Process {
-        # Setup parameters for invoke-sqlcmd
+        # Setup parameters for invoke-sql
         $SQLParams = @{
             ServerInstance= $ServerInstance
-            ApplicationName = "PowerShell Get-SQLJobInfo"
         }
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
@@ -786,7 +786,6 @@ Function Get-SQLRunningJobs {
         # Setup parameters for invoke-sqlcmd
         $SQLParams = @{
             ServerInstance= $ServerInstance
-            ApplicationName = "PowerShell Get-SQLJobInfo"
         }
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
@@ -902,7 +901,6 @@ Function Get-SQLJobHistory {
         # Setup parameters for invoke-sqlcmd
         $SQLParams = @{
             ServerInstance= $ServerInstance
-            ApplicationName = "PowerShell Get-SQLJobHistory"
         }
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
