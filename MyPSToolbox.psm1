@@ -1,4 +1,123 @@
-#Requires -Modules sqlserver
+
+
+function Invoke-SQL {
+    <#
+        .SYNOPSIS
+            Invoke-SQL is an alternative to Invoke-Sqlcmd that does not require the SQLServer module to be installed.  It uses the .Net SQLClient
+
+        .DESCRIPTION
+            Invoke-SQL is an alternative to Invoke-Sqlcmd that does not require the SQLServer module.  It uses the .Net SQLClient to query SQL Server.
+
+            Selecting -Verbose will display the connection string being used.  -ShowPassword will display the password in the connection string.
+
+        .PARAMETER ServerInstance
+            The Micorosft SQL Server host to query for sessions.
+
+        .PARAMETER TrustServerCertificate
+            Newer SQL Server clients will not connect if the server certificate is not
+            stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $flase" will
+            remove this parameter.
+
+        .PARAMETER [PSCredential]Credential
+            Specifies a user account that has permission to perform this action. The default
+            is the current user with Intergrated Security.
+
+        .PARAMETER Database
+            The database to query.  The default is the current database.
+
+        .PARAMETER Encryption
+            Encrypt the connection to SQL Server.
+
+        .PARAMETER ConnectionTimeout
+            The number of seconds before a connection is considered timed out.  The default is 10 seconds.
+
+        .PARAMETER Query
+            The query test to submitt to SQL Server.
+
+        .PARAMETER ShowPassword
+            Will display the password in the connection string if -Verbose is used.
+
+        .PARAMETER AdditionalText
+            Any additional text to add to the connection string.
+
+        .EXAMPLE
+            # Using Microsoft SQL Server credentials
+                $cred = Get-Credential
+                Invoke-SQL -ServerInstance "localhost" -Credential $cred -Query "SELECT @@servername as 'Server'" -Verbose
+
+        .INPUTS
+            ServerInstance
+            TrustServerCertificate
+            Credential
+            Database
+            ConnectionTimeout
+            Credentials
+            ShowPassword
+            AdditionalText
+
+        .OUTPUTS
+            Dataset
+
+        .NOTES
+            Author:  David Allen
+            Email: dallenva@gmail.com
+        #>
+        Param([parameter(Mandatory)][string]$ServerInstance
+                ,[parameter(Mandatory)][string]$Query
+                ,[string]$Database
+                ,[int]$ConnectionTimeout=10
+                ,[pscredential]$Credentials
+                ,[switch]$Encryption
+                ,[switch]$TrustServerCertificate
+                ,[switch]$ShowPassword
+                ,[string]$AdditionalText)
+        Process {
+    # Build Connection
+            $conn = new-object System.Data.SqlClient.SQLConnection
+    # Build Connection String
+            $ConnectionString = "Server='{0}'" -f $ServerInstance
+            If($Database.Length -gt 0) {$ConnectionString += ";Database='{0}'" -f $Database}
+            If($ConnectionTimeout -gt 0) {$ConnectionString += ";Connect Timeout={0}" -f $ConnectionTimeout}
+            If($Credentials) {$ConnectionString += ";User ID='{0}';Password='{1}'" -f $Credentials.UserName, $Credentials.GetNetworkCredential().Password}
+            If($Encryption) {$ConnectionString += ";Encrypt='Yes'"}
+            If($TrustServerCertificate-eq $true) {$ConnectionString += ";TrustServerCertificate='Yes'"}
+            if($AdditionalText) {$ConnectionString += ";{0}" -f $AdditionalText}
+            if($showpassword) {$InfoConStr = $ConnectionString}else{$InfoConStr = $ConnectionString.Replace(($Credentials.GetNetworkCredential().Password),"********")}
+            $Info = ("SQL ConnectionString before trying to connect: " + $InfoConStr)
+            Write-Verbose $Info
+    # Set Connection String
+            try{$conn.ConnectionString = $ConnectionString}catch{throw $_}
+    # Open Connection
+            $conn.Open()
+
+    # If sucessful open connection, run query
+            if($conn.state -eq 'Open'){
+                    Write-Verbose "----------------------------------------------------------"
+                    Write-Verbose "Open() successful.... Connection Details:"
+                    write-verbose ("ConnectionString: " + $conn.ConnectionString)
+                    write-verbose ("ConnectionTimeout: " + $conn.ConnectionTimeout)
+                    write-verbose ("Database: " + $conn.Database)
+                    write-verbose ("DataSource: " + $conn.DataSource)
+                    write-verbose ("ServerVersion: " + $conn.ServerVersion)
+                    write-verbose ("State: " + $conn.State)
+                    write-verbose ("WorkstationId: " + $conn.WorkstationId)
+                    $time = measure-command{$ExecSQL = New-Object system.Data.SqlClient.SqlCommand($Query, $conn)
+    # Convert result to table
+                                            $Results = New-Object System.Data.SqlClient.SqlDataAdapter($ExecSQL)
+                                            $Data = New-Object System.Data.DataSet
+                                            [void]$Results.Fill($Data)
+    # Close SQL Connection
+                                            $conn.Close()}
+                    $Info = "Elapsed Seconds: " + $time.TotalSeconds
+                    Write-Verbose "----------------------------------------------------------"
+                    Write-Verbose $Info
+                    $Info = "Record Count: " + $Data.Tables[0].Rows.Count
+                    Write-Verbose $Info
+    # Return Results
+                    Return $Data.Tables[0]}
+        }
+    }
+
 Function Get-EmptyDirectory {
     <#
     .SYNOPSIS
@@ -98,7 +217,7 @@ function Set-Cursor {
 #>
 Param([int]$x, [int] $y)
 Process {
-    $Host.UI.RawUI.CursorPosition = New-Object System.Management.Automation.Host.Coordinates $x , $y 
+    $Host.UI.RawUI.CursorPosition = New-Object System.Management.Automation.Host.Coordinates $x , $y
 }
 }
 function Set-ConsoleWindowSize
@@ -214,7 +333,7 @@ Function Out-ScreenGrid {
         $EvenLinesFormat = $PSStyle.Background.brightCyan + $psstyle.Foreground.Black
         $HeaderLineFormat = $psstyle.Bold+$psstyle.Underline+$PSStyle.Background.blue + $psstyle.Foreground.white
         $MaxColumns = 5
-<# 
+<#
 Create options for
         max lines
         Header format colors
@@ -241,7 +360,7 @@ Create options for
                                     ;if($ColumnIdx -eq $MaxColumns){$ColumnIdx = $ColumnNumber}else{$ColumnIdx +=1}
                                 }until($ColumnIdx -eq $ColumnNumber)
     # Format Header, Odd, Even colors
-            ;if($RowIdx -eq 0){$TempRowString = $HeaderLineFormat+$TempRowString+$Reset}else{ 
+            ;if($RowIdx -eq 0){$TempRowString = $HeaderLineFormat+$TempRowString+$Reset}else{
                 if (($RowIdx % 2) -ne 0) {$TempRowString = $OddLinesFormat+$TempRowString+$Reset}else
                     {$TempRowString = $EvenLinesFormat+$TempRowString+$Reset}}
     # The process leave line breaks, remove them and add a single one at the end
@@ -357,7 +476,6 @@ Function Get-SQLSessionInfo {
     # Setup parameters for invoke-sqlcmd
         $SQLParams = @{
             ServerInstance= $ServerInstance
-            ApplicationName = "PowerShell Get-SQLSessionInfo"
         }
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
@@ -366,7 +484,7 @@ Function Get-SQLSessionInfo {
 
     # Get current SPID and test server connection, Exit if SQL call fails.
         $SQLGetMySPID = "Select convert(varchar(10),@@SPID) as 'MYSPID'"
-        try{$MYSPID = invoke-sqlcmd @SQLParams -query $SQLGetMySPID -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
         Write-Verbose ("Running user's SPID: "+$MYSPID.MYSPID)
 
     # Script to look up sessions
@@ -595,11 +713,11 @@ order by
 
     # Query SPIDs
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sqlcmd @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
-        if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoreing disabled jobs.")}    
+        if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoreing disabled jobs.")}
     # If only looking at specific login names remove all but those login names
         if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $Searchname -or $_.stepName -like $Searchname} ;Write-Verbose ("Including Name Search: "+$SearchName)}
     #Ouput any remaining records
@@ -711,7 +829,7 @@ AND stop_execution_date is null;"
 
     # Query SPIDs
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sqlcmd @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s) Found")}
     # If only looking at specific login names remove all but those login names
@@ -827,7 +945,7 @@ ORDER BY
 
     # Query SPIDs
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sqlcmd @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
