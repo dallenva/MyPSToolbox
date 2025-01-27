@@ -84,7 +84,7 @@ function Invoke-SQL {
             If($TrustServerCertificate-eq $true) {$ConnectionString += ";TrustServerCertificate='Yes'"}
             if($AdditionalText) {$ConnectionString += ";{0}" -f $AdditionalText}
             $InfoConStr = $ConnectionString
-            if($showpassword -eq $false){$InfoConStr = $InfoConStr.Replace(($Credential.GetNetworkCredential().Password),"********")}
+            if($showpassword -eq $false -and $credential.length -gt 0){$InfoConStr = $InfoConStr.Replace(($Credential.GetNetworkCredential().Password),"********")}
             $Info = ("SQL ConnectionString before trying to connect: " + $InfoConStr)
             Write-Verbose $Info
     # Set Connection String
