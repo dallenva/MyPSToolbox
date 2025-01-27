@@ -67,7 +67,7 @@ function Invoke-SQL {
                 ,[parameter(Mandatory)][string]$Query
                 ,[string]$Database
                 ,[int]$ConnectionTimeout=10
-                ,[pscredential]$Credentials
+                ,[pscredential]$Credential = $null
                 ,[switch]$Encryption
                 ,[switch]$TrustServerCertificate
                 ,[switch]$ShowPassword
@@ -79,11 +79,12 @@ function Invoke-SQL {
             $ConnectionString = "Server='{0}'" -f $ServerInstance
             If($Database.Length -gt 0) {$ConnectionString += ";Database='{0}'" -f $Database}
             If($ConnectionTimeout -gt 0) {$ConnectionString += ";Connect Timeout={0}" -f $ConnectionTimeout}
-            If($Credentials) {$ConnectionString += ";User ID='{0}';Password='{1}'" -f $Credentials.UserName, $Credentials.GetNetworkCredential().Password}
+            If($Credential.length -gt 0) {$ConnectionString += ";Integrated Security=false;User ID='{0}';Password='{1}'" -f $Credential.UserName, $Credential.GetNetworkCredential().Password}else{$ConnectionString += ";Integrated Security=true"}
             If($Encryption) {$ConnectionString += ";Encrypt='Yes'"}
             If($TrustServerCertificate-eq $true) {$ConnectionString += ";TrustServerCertificate='Yes'"}
             if($AdditionalText) {$ConnectionString += ";{0}" -f $AdditionalText}
-            if($showpassword) {$InfoConStr = $ConnectionString}else{$InfoConStr = $ConnectionString.Replace(($Credentials.GetNetworkCredential().Password),"********")}
+            $InfoConStr = $ConnectionString
+            if($showpassword -eq $false){$InfoConStr = $InfoConStr.Replace(($Credential.GetNetworkCredential().Password),"********")}
             $Info = ("SQL ConnectionString before trying to connect: " + $InfoConStr)
             Write-Verbose $Info
     # Set Connection String
