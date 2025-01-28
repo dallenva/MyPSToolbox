@@ -716,7 +716,7 @@ where
 order by
     j.name,j.job_id,sx.step_id"
 
-    # Query SPIDs
+    # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
         try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
     # If nothing returned allow for verbose message
@@ -803,17 +803,9 @@ Function Get-SQLRunningJobs {
 USE msdb
 SELECT @@servername as 'ServerInstance',
     j.name AS 'JobName',
+    j.job_id as 'JobId',
     ISNULL(last_executed_step_id,0)+1 AS 'CurrentStep',
     Js.step_name as 'StepName',
-    (cast(
-        (cast(cast(getdate() as float) - cast(ja.last_executed_step_id as float) as int) * 24) /* hours over 24 */
-        + datepart(hh, getdate() - ja.last_executed_step_id) /* hours */
-        as varchar(10))
-    + ':' + right('0' + cast(datepart(mi, getdate() - ja.last_executed_step_id) as varchar(2)), 2) /* minutes */
-    + ':' + right('0' + cast(datepart(ss, getdate() - ja.last_executed_step_id) as varchar(2)), 2) /* seconds */
-    ) as 'StepElapsedTime(H:M:S)',
-    --format(datediff(n,ja.start_execution_date,getdate()),'###,##0') as 'MinutesRunning',
-    --format(datediff(hh,ja.start_execution_date,getdate()),'###,##0') as 'HoursRunning',
     (cast(
         (cast(cast(getdate() as float) - cast(ja.start_execution_date as float) as int) * 24) /* hours over 24 */
         + datepart(hh, getdate() - ja.start_execution_date) /* hours */
@@ -822,7 +814,6 @@ SELECT @@servername as 'ServerInstance',
     + ':' + right('0' + cast(datepart(ss, getdate() - ja.start_execution_date) as varchar(2)), 2) /* seconds */
     ) as 'JobElapsedTime',
     ja.start_execution_date as 'StartedOn'
-    --getdate() as 'DateTimestamp'
 FROM msdb.dbo.sysjobactivity ja
     LEFT JOIN msdb.dbo.sysjobhistory jh on ja.job_history_id = jh.instance_id
     JOIN msdb.dbo.sysjobs j on ja.job_id = j.job_id
@@ -830,9 +821,9 @@ FROM msdb.dbo.sysjobactivity ja
 WHERE
     ja.session_id = (SELECT TOP 1 session_id FROM msdb.dbo.syssessions ORDER BY agent_start_date DESC)
 AND start_execution_date is not null
-AND stop_execution_date is null;"
+AND stop_execution_date is null"
 
-    # Query SPIDs
+    # Query jobss
         Write-Verbose "Attempting to retreive jobs."
         try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
     # If nothing returned allow for verbose message
@@ -948,7 +939,7 @@ ORDER BY
     ,S.step_id
     "
 
-    # Query SPIDs
+    # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
         try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
     # If nothing returned allow for verbose message
