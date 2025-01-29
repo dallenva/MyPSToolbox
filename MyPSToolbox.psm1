@@ -66,7 +66,7 @@ function Invoke-SQL {
         Param([parameter(Mandatory)][string]$ServerInstance
                 ,[parameter(Mandatory)][string]$Query
                 ,[string]$Database
-                ,[int]$ConnectionTimeout=10
+                ,[int]$ConnectionTimeout=999
                 ,[pscredential]$Credential = $null
                 ,[switch]$Encryption
                 ,[switch]$TrustServerCertificate
