@@ -66,7 +66,7 @@ function Invoke-SQL {
         Param([parameter(Mandatory)][string]$ServerInstance
                 ,[parameter(Mandatory)][string]$Query
                 ,[string]$Database
-                ,[int]$ConnectionTimeout=999
+                ,[int]$ConnectionTimeout=10
                 ,[pscredential]$Credential = $null
                 ,[switch]$Encryption
                 ,[switch]$TrustServerCertificate
@@ -96,14 +96,14 @@ function Invoke-SQL {
             if($conn.state -eq 'Open'){
                     Write-Verbose "----------------------------------------------------------"
                     Write-Verbose "Open() successful.... Connection Details:"
+                    Write-Verbose ("Query Started: " + (Get-Date))
                     write-verbose ("ConnectionString: " + $conn.ConnectionString)
-                    write-verbose ("ConnectionTimeout: " + $conn.ConnectionTimeout)
                     write-verbose ("Database: " + $conn.Database)
                     write-verbose ("DataSource: " + $conn.DataSource)
                     write-verbose ("ServerVersion: " + $conn.ServerVersion)
-                    write-verbose ("State: " + $conn.State)
                     write-verbose ("WorkstationId: " + $conn.WorkstationId)
                     $time = measure-command{$ExecSQL = New-Object system.Data.SqlClient.SqlCommand($Query, $conn)
+                                            $ExecSQL.CommandTimeout = 720
     # Convert result to table
                                             $Results = New-Object System.Data.SqlClient.SqlDataAdapter($ExecSQL)
                                             $Data = New-Object System.Data.DataSet
@@ -111,10 +111,9 @@ function Invoke-SQL {
     # Close SQL Connection
                                             $conn.Close()}
                     $Info = "Elapsed Seconds: " + $time.TotalSeconds
-                    Write-Verbose "----------------------------------------------------------"
+                    Write-Verbose ("Query Ended: " + (Get-Date))
                     Write-Verbose $Info
                     $Info = "Record Count: " + $Data.Tables[0].Rows.Count
-                    Write-Verbose "----------------------------------------------------------"
                     Write-Verbose $Info
                     Write-Verbose "-- End Invoke-SQL ----------------------------------------"
     # Return Results
@@ -488,8 +487,9 @@ Function Get-SQLSessionInfo {
         if($Credential.count -gt 0){$SQLParams += @{Credential = $Credential}}
 
     # Get current SPID and test server connection, Exit if SQL call fails.
+        Write-Verbose "Get current user SPID"
         $SQLGetMySPID = "Select convert(varchar(10),@@SPID) as 'MYSPID'"
-        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
         Write-Verbose ("Running user's SPID: "+$MYSPID.MYSPID)
 
     # Script to look up sessions
@@ -545,8 +545,8 @@ ORDER BY
     s.session_id"
 
     # Query SPIDs
-        try{$RunningSessions = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed."}
-    # If nothing returned allow for verbose message
+        Write-Verbose "Get All SPIDs"
+        try{$RunningSessions = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw }
         if ($RunningSessions.count -lt 0){Write-Verbose "No SPID(s) found"}else{Write-Verbose ($RunningSessions.count.ToString() + " SPID(s) Found")}
 
     ###### Filter records based on parameters
@@ -718,7 +718,7 @@ order by
 
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
@@ -825,7 +825,7 @@ AND stop_execution_date is null"
 
     # Query jobss
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s) Found")}
     # If only looking at specific login names remove all but those login names
@@ -908,7 +908,7 @@ Function Get-SQLJobHistory {
     # Script to look up sessions
         $sql = "
 USE msdb
-SELECT
+SELECT top 100000
     @@ServerName as 'ServerInstance'
     ,J.Job_id as 'JobId'
     ,J.name as 'JobName'
@@ -931,17 +931,15 @@ SELECT
     ,H.run_duration as 'DurationSeconds'
 FROM
     sysjobhistory H
-   INNER JOIN sysjobsteps S ON H.step_id = S.step_id AND H.job_id = S.job_id
-   INNER JOIN sysjobs J ON J.job_id = H.job_id
+    INNER JOIN sysjobsteps S ON H.step_id = S.step_id AND H.job_id = S.job_id
+    INNER JOIN sysjobs J ON J.job_id = H.job_id
 ORDER BY
-    j.name
-    ,msdb.dbo.agent_datetime(h.run_date, h.run_time)
-    ,S.step_id
+    msdb.dbo.agent_datetime(h.run_date, h.run_time)
     "
 
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance and credentials. Also try with or without -TrustServerCertificate.  Ensure sqlserver module is installed.";return}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
