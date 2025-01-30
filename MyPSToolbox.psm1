@@ -917,13 +917,13 @@ SELECT top 100000
 	,s.step_uid as 'StepID'
     ,S.step_name as 'StepName'
     ,H.message as 'Message'
-    ,run_status = CASE H.run_status
+    ,CASE H.run_status
         WHEN 0 THEN 'Failed'
         WHEN 1 THEN 'Succeeded'
         WHEN 2 THEN 'Retry'
         WHEN 3 THEN 'Canceled'
         WHEN 4 THEN 'In progress'
-    END
+    END as RunStatus
     ,case
         when s.last_run_date = 0 then null
         else msdb.dbo.agent_datetime(h.run_date, h.run_time)
@@ -933,6 +933,7 @@ FROM
     sysjobhistory H
     INNER JOIN sysjobsteps S ON H.step_id = S.step_id AND H.job_id = S.job_id
     INNER JOIN sysjobs J ON J.job_id = H.job_id
+where H.run_status != 4
 ORDER BY
     msdb.dbo.agent_datetime(h.run_date, h.run_time)
     "
