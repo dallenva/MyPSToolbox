@@ -953,3 +953,48 @@ ORDER BY
         return $SQLAgentJobs | Sort-Object -Property JobName
     }
 }
+function Format-ProgressBar {
+<#
+    .SYNOPSIS
+        Create a string to display a progress bar
+
+    .DESCRIPTION
+        Creates a text based percent bar as a string.
+
+    .PARAMETER Width
+        Width of the output string, defaults to 10.
+
+    .PARAMETER Percent
+        Percent of the bar to fill.
+
+    .PARAMETER ForegroundColor
+        Color of the bar, defaults to screen font color.
+
+    .EXAMPLE
+        Format-ProgressBar -Width 100 -Percent 50 -ForegroundColor Green
+
+    .INPUTS
+        Width
+        Percent
+        ForegroundColor
+
+    .OUTPUTS
+        String
+
+    .NOTES
+        Author:  David Allen
+        Email: dallenva@gmail.com
+    #>
+    Param(
+        [int32]$Width = 10,
+        [decimal]$Percent,
+        [string]$ForegroundColor
+    )
+    Process {
+        $Display = [Math]::Round($width * ($percent / 100))
+        $Output = ('').padright($Display,"█") 
+        $Output += ('').padright($Width - $Display,"░")
+        If ($color.Length -gt 0){$Output = $psstyle.Foreground.$color + $Output + $PSStyle.Reset}else{$Output}
+        return $Output
+    }
+}
