@@ -953,7 +953,7 @@ ORDER BY
         return $SQLAgentJobs | Sort-Object -Property JobName
     }
 }
-function Format-ProgressBar {
+function Format-ColorBar {
 <#
     .SYNOPSIS
         Create a string to display a progress bar
@@ -971,7 +971,7 @@ function Format-ProgressBar {
         Color of the bar, defaults to screen font color.
 
     .EXAMPLE
-        Format-ProgressBar -Width 100 -Percent 50 -ForegroundColor Green
+        Format-ColorBar -Width 100 -Percent 50 -ForegroundColor Green
 
     .INPUTS
         Width
@@ -994,7 +994,7 @@ function Format-ProgressBar {
         $Display = [Math]::Round($width * ($percent / 100))
         $Output = ('').padright($Display,"█") 
         $Output += ('').padright($Width - $Display,"░")
-        If ($color.Length -gt 0){$Output = $psstyle.Foreground.$color + $Output + $PSStyle.Reset}else{$Output}
+        If ($ForegroundColor.Length -gt 0){$Output = $psstyle.Foreground.$ForegroundColor + $Output + $PSStyle.Reset}
         return $Output
     }
 }
