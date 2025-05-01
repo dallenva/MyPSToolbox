@@ -908,34 +908,30 @@ Function Get-SQLJobHistory {
     # Script to look up sessions
         $sql = "
 USE msdb
-SELECT top 100000
+SELECT distinct
     @@ServerName as 'ServerInstance'
-    ,J.Job_id as 'JobId'
     ,J.name as 'JobName'
     ,iif(j.enabled=1,'Yes','No') as 'JobEnabled'
-    ,S.step_id as 'StepNumber'
-	,s.step_uid as 'StepID'
-    ,S.step_name as 'StepName'
     ,H.message as 'Message'
-    ,CASE H.run_status
+    ,run_status = CASE H.run_status
         WHEN 0 THEN 'Failed'
         WHEN 1 THEN 'Succeeded'
         WHEN 2 THEN 'Retry'
         WHEN 3 THEN 'Canceled'
         WHEN 4 THEN 'In progress'
-    END as RunStatus
-    ,case
-        when s.last_run_date = 0 then null
-        else msdb.dbo.agent_datetime(h.run_date, h.run_time)
-    end as 'StepLastRunDateTime'
-    ,H.run_duration as 'DurationSeconds'
+    END
+                ,msdb.dbo.agent_datetime(h.run_date, h.run_time) as 'StartDateTime'
+                ,iif(H.run_duration > 9999,format(H.run_duration,'####:##:00'),format(H.run_duration,'##:00')) as 'Duration_H-M-S'
+                ,convert(int,substring(right('00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))),8),7,2)) +
+                                convert(int,substring(right('00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))),8),5,2)) * 60 +
+                                convert(int,substring(right('00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))),8),1,4)) * 3600 as 'DurationSeconds'
 FROM
-    sysjobhistory H
-    INNER JOIN sysjobsteps S ON H.step_id = S.step_id AND H.job_id = S.job_id
-    INNER JOIN sysjobs J ON J.job_id = H.job_id
-where H.run_status != 4
+    sysjobs J
+    INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
+--where
+--                j.name = X
 ORDER BY
-    msdb.dbo.agent_datetime(h.run_date, h.run_time)
+    msdb.dbo.agent_datetime(h.run_date, h.run_time) desc
     "
 
     # Query Jobs
