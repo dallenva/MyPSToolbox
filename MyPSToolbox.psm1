@@ -909,40 +909,40 @@ Function Get-SQLJobHistory {
         $sql = "
 USE msdb
 SELECT distinct
-    @@ServerName as 'ServerInstance'
-    ,J.name as 'JobName'
-    ,iif(j.enabled=1,'Yes','No') as 'JobEnabled'
-    ,H.message as 'Message'
-    ,run_status = CASE H.run_status
-        WHEN 0 THEN 'Failed'
-        WHEN 1 THEN 'Succeeded'
-        WHEN 2 THEN 'Retry'
-        WHEN 3 THEN 'Canceled'
-        WHEN 4 THEN 'In progress'
-    END
-                ,msdb.dbo.agent_datetime(h.run_date, h.run_time) as 'StartDateTime'
-                ,iif(H.run_duration > 9999,format(H.run_duration,'####:##:00'),format(H.run_duration,'##:00')) as 'Duration_H-M-S'
-                ,convert(int,substring(right('00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))),8),7,2)) +
-                                convert(int,substring(right('00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))),8),5,2)) * 60 +
-                                convert(int,substring(right('00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))),8),1,4)) * 3600 as 'DurationSeconds'
+@@ServerName as 'ServerInstance'
+,J.name as 'JobName'
+,iif(j.enabled=1, 'Yes','No') as 'JobEnabled'
+,H.message as 'Message'
+,run_status = CASE H.run_status
+                WHEN 0 THEN 'Failed'
+                WHEN 1 THEN 'Succeeded'
+                WHEN 2 THEN 'Retry'
+                WHEN 3 THEN 'Canceled'
+                WHEN 4 THEN 'In progress'
+            END
+, msdb.dbo.agent_datetime(h.run_date, h.run_time) as 'StartDateTime'
+,iif(H.run_duration > 9999, format(H.run_duration, '####:##:00'), format(H.run_duration, '##:00')) as 'Duration_H-M-S'
+,convert(int, substring(right('00000000'+ltrim(rtrim(convert(varchar(10), H.run_duration))), 8), 7,2)) + convert(int, substring(right('00000000'+ltrim(rtrim(convert(varchar(10), H.run_duration))), 8), 5,2)) * 60 + convert(int, substring(right( '00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))), 8),1,4)) * 3600 as 'DurationSeconds'
 FROM
-    sysjobs J
-    INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
---where
---                j.name = X
+sysjobs J
+INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
+where
+j.name like '{0}'
 ORDER BY
-    msdb.dbo.agent_datetime(h.run_date, h.run_time) desc
+msdb.dbo. agent_datetime(h.run_date, h.run_time) desc
     "
 
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
+        Write-Verbose ($sql -f $SearchName) 
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query ($sql -f $SearchName) -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
         if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoreing disabled jobs.")}
-    # If only looking at specific login names remove all but those login names
-        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $Searchname -or $_.stepName -like $Searchname} ;Write-Verbose ("Including Name Search: "+$SearchName)}
+    # # If only looking at specific login names remove all but those login names
+    # Removed so you can target jobs by name only
+    #     if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $Searchname -or $_.stepName -like $Searchname} ;Write-Verbose ("Including Name Search: "+$SearchName)}
     #Ouput any remaining records
         if ($SQLAgentJobs.count -gt 0){$Final = "Record Count after filters: "+$SQLAgentJobs.count}else{$Final = "Record Count after filters: 0"}
         Write-Verbose  ($final)
