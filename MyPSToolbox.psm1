@@ -929,7 +929,7 @@ INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
 where
 j.name like '{0}'
 ORDER BY
-msdb.dbo. agent_datetime(h.run_date, h.run_time) desc
+msdb.dbo.agent_datetime(h.run_date, h.run_time) desc
     "
 
     # Query Jobs
