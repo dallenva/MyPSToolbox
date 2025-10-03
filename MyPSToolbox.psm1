@@ -654,6 +654,65 @@ select
 	,iif(sSCH.schedule_uid is not NULL,'Yes','No') AS 'IsScheduled'
     ,sSCH.schedule_uid AS 'JobScheduleID'
     ,sSCH.name AS 'JobScheduleName'
+
+	, case sSCH.freq_type when 1 then 'One time only'
+                 when 4 then 'Daily'
+                 when 8 then 'Weekly'
+                 when 16 then 'Monthly'
+                 when 32 then 'Monthly, relative to freq_interval'
+                 when 64 then 'Runs when SQL Server Agent service starts'
+                 when 128 then 'Runs when computer is idle'
+                 else 'Unknown'
+                 end as JobFrequency
+, case when sSCH.freq_type = 1 then 'Unused'
+       when sSCH.freq_type = 4 then 'Every ' + convert(varchar(10), sSCH.freq_interval) + ' days'
+       when sSCH.freq_type = 8 then 'Weekly: every'
+                   + case when sSCH.freq_interval & 1 = 1 then ' Sunday' else '' end
+                   + case when sSCH.freq_interval & 2 = 2 then ' Monday' else '' end
+                   + case when sSCH.freq_interval & 4 = 4 then ' Tuesday' else '' end
+                   + case when sSCH.freq_interval & 8 = 8 then ' Wednesday' else '' end
+                   + case when sSCH.freq_interval & 16 = 16 then ' Thursday' else '' end
+                   + case when sSCH.freq_interval & 32 = 32 then ' Friday' else '' end
+                   + case when sSCH.freq_interval & 64 = 64 then ' Saturday' else '' end
+ 
+       when sSCH.freq_type = 16 then 'Monthly: on the ' + convert(varchar(10), sSCH.freq_interval) + ' day of every ' + convert(varchar(10), sSCH.freq_recurrence_factor) + ' month(s)'
+       when sSCH.freq_type = 32 then 'Monthly: on the ' + case when sSCH.freq_relative_interval = 0 then 'Unused'
+                 when sSCH.freq_relative_interval = 1 then 'First'
+                 when sSCH.freq_relative_interval = 2 then 'Second'
+                 when sSCH.freq_relative_interval = 4 then 'Third'
+                 when sSCH.freq_relative_interval = 8 then 'Fourth'
+                 when sSCH.freq_relative_interval = 16 then 'Last'
+                 else 'Unknown' end + ' ' + case when sSCH.freq_interval = 1 then  'Sunday'
+                                                                when sSCH.freq_interval = 2 then  'Moday'
+                                                                when sSCH.freq_interval = 3 then  'Tusday'
+                                                                when sSCH.freq_interval = 4 then  'Wednesday'
+                                                                when sSCH.freq_interval = 5 then  'Thursday'
+                                                                when sSCH.freq_interval = 6 then  'Friday'
+                                                                when sSCH.freq_interval = 7 then  'Saturday'
+                                                                when sSCH.freq_interval = 8 then  'Day'
+                                                                when sSCH.freq_interval = 9 then  'Weekday'
+                                                                when sSCH.freq_interval = 10 then 'Weekend day'
+                                                                end + ' of every ' + convert(varchar(10), sSCH.freq_recurrence_factor) + ' month(s)'
+       else 'Unused'
+       end as JobFrequencyIntervalDescription
+, case when sSCH.freq_type = 1 then 'At the specified time'
+       when sSCH.freq_subday_type = 1 then 'At the specified time'
+       when sSCH.freq_subday_type = 2 then 'Seconds'
+       when sSCH.freq_subday_type = 4 then 'Minutes'
+       when sSCH.freq_subday_type = 8 then 'Hours'
+                 end as JobFrequencyTypeDescription
+, case
+when sSCH.freq_type = 1 then 'At ' + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_start_date, sSCH.active_start_time), 121),12, 12)
+when sSCH.freq_subday_type = 1 then 'At ' + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_start_date, sSCH.active_start_time), 121),12, 12)
+when sSCH.freq_subday_type in (2,4,8) then 'Every ' + convert(varchar(10), sSCH.freq_subday_interval) + ' ' + case sSCH.freq_subday_type when 1 then 'At the specified time'
+                 when 2 then 'Seconds' + ' between ' + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_start_date, sSCH.active_start_time), 121),12, 12) + ' and '  + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_end_date, sSCH.active_end_time), 121),12, 12)
+                 when 4 then 'Minutes' + ' between ' + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_start_date, sSCH.active_start_time), 121),12, 12) + ' and '  + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_end_date, sSCH.active_end_time), 121),12, 12)
+                 when 8 then 'Hours' + ' between ' + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_start_date, sSCH.active_start_time), 121),12, 12) + ' and '  + substring(convert(varchar(23), msdb.dbo.agent_datetime(sSCH.active_end_date, sSCH.active_end_time), 121),12, 12)
+                 end
+                 else 'Unused' end as JobFrequencySubTypeDescription
+
+
+
     , CASE j.delete_level
         WHEN 0 THEN 'Never'
         WHEN 1 THEN 'On Success'
@@ -668,13 +727,13 @@ select
 	,sPROX.name AS 'RunAs'
     ,case
         when charindex('/FILE `"\`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/FILE `"',sx.command,1)+9,charindex('.dtsx',sx.command,charindex('/FILE `"',sx.command,1))-5)
-        when charindex('/FILE',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/FILE `"',sx.command,1)+7,charindex('.dtsx',sx.command,charindex('/FILE `"',sx.command,1))-3)
+        when charindex('/FILE',sx.command,1) > 0 and charindex('.dtsx`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/FILE `"',sx.command,1)+7,charindex('.dtsx',sx.command,charindex('/FILE `"',sx.command,1))-3)
         when charindex('/ISSERVER `"\`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/ISSERVER `"\`"',sx.command,1)+13,charindex('.dtsx',sx.command,charindex('/ISSERVER `"\`"',sx.command,1))-9)
         else null
     end as 'StepDTSXFileName'
     ,case
         when charindex('/CONFIGFILE `"\`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/CONFIGFILE `"\`"',sx.command,1)+15,charindex('.dtsConfig',sx.command,1)-charindex('/CONFIGFILE `"\`"',sx.command,1)-5)
-        --when charindex('/CONFIGFILE',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/CONFIGFILE `"\`"',sx.command,1)+13,charindex('.dtsConfig',sx.command,charindex('/CONFIGFILE `"',sx.command,1)+charindex('/CONFIGFILE `"',sx.command,1)))
+        when charindex('/CONFIGFILE',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/CONFIGFILE `"\`"',sx.command,1)+13,charindex('.dtsConfig',sx.command,charindex('/CONFIGFILE `"',sx.command,1)+charindex('/CONFIGFILE `"',sx.command,1)))
         else null
     end as 'StepConfigFileName'
     ,case
