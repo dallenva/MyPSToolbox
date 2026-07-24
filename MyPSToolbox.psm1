@@ -674,7 +674,7 @@ select
                    + case when sSCH.freq_interval & 16 = 16 then ' Thursday' else '' end
                    + case when sSCH.freq_interval & 32 = 32 then ' Friday' else '' end
                    + case when sSCH.freq_interval & 64 = 64 then ' Saturday' else '' end
- 
+
        when sSCH.freq_type = 16 then 'Monthly: on the ' + convert(varchar(10), sSCH.freq_interval) + ' day of every ' + convert(varchar(10), sSCH.freq_recurrence_factor) + ' month(s)'
        when sSCH.freq_type = 32 then 'Monthly: on the ' + case when sSCH.freq_relative_interval = 0 then 'Unused'
                  when sSCH.freq_relative_interval = 1 then 'First'
@@ -988,12 +988,12 @@ INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
 where
 j.name like '{0}'
 ORDER BY
-msdb.dbo.agent_datetime(h.run_date, h.run_time) desc
+J.Name asc,h.run_date desc, h.run_time desc
     "
 
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
-        Write-Verbose ($sql -f $SearchName) 
+        Write-Verbose ($sql -f $SearchName)
         try{$SQLAgentJobs = invoke-sql @SQLParams -query ($sql -f $SearchName) -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
@@ -1047,7 +1047,7 @@ function Format-ColorBar {
     )
     Process {
         $Display = [Math]::Round($width * ($percent / 100))
-        $Output = ('').padright($Display,"█") 
+        $Output = ('').padright($Display,"█")
         $Output += ('').padright($Width - $Display,"░")
         If ($ForegroundColor.Length -gt 0){$Output = $psstyle.Foreground.$ForegroundColor + $Output + $PSStyle.Reset}
         return $Output
