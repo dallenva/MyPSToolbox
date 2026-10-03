@@ -11,16 +11,16 @@ function Invoke-SQL {
             Selecting -Verbose will display the connection string being used.  -ShowPassword will display the password in the connection string.
 
         .PARAMETER ServerInstance
-            The Micorosft SQL Server host to query for sessions.
+            The Microsoft SQL Server host to query for sessions.
 
         .PARAMETER TrustServerCertificate
             Newer SQL Server clients will not connect if the server certificate is not
-            stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $flase" will
+            stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
             remove this parameter.
 
         .PARAMETER [PSCredential]Credential
             Specifies a user account that has permission to perform this action. The default
-            is the current user with Intergrated Security.
+            is the current user with Integrated Security.
 
         .PARAMETER Database
             The database to query.  The default is the current database.
@@ -32,7 +32,7 @@ function Invoke-SQL {
             The number of seconds before a connection is considered timed out.  The default is 10 seconds.
 
         .PARAMETER Query
-            The query test to submitt to SQL Server.
+            The query test to submit to SQL Server.
 
         .PARAMETER ShowPassword
             Will display the password in the connection string if -Verbose is used.
@@ -67,7 +67,7 @@ function Invoke-SQL {
                 ,[parameter(Mandatory)][string]$Query
                 ,[string]$Database
                 ,[int]$ConnectionTimeout=10
-                ,[pscredential]$Credential = $null
+                ,[PSCredential]$Credential = $null
                 ,[switch]$Encryption
                 ,[switch]$TrustServerCertificate
                 ,[switch]$ShowPassword
@@ -84,7 +84,7 @@ function Invoke-SQL {
             If($TrustServerCertificate-eq $true) {$ConnectionString += ";TrustServerCertificate='Yes'"}
             if($AdditionalText) {$ConnectionString += ";{0}" -f $AdditionalText}
             $InfoConStr = $ConnectionString
-            if($showpassword -eq $false -and $credential.length -gt 0){$InfoConStr = $InfoConStr.Replace(($Credential.GetNetworkCredential().Password),"********")}
+            if($ShowPassword-eq $false -and $credential.length -gt 0){$InfoConStr = $InfoConStr.Replace(($Credential.GetNetworkCredential().Password),"********")}
             $Info = ("SQL ConnectionString before trying to connect: " + $InfoConStr)
             Write-Verbose $Info
     # Set Connection String
@@ -92,7 +92,7 @@ function Invoke-SQL {
     # Open Connection
             $conn.Open()
 
-    # If sucessful open connection, run query
+    # If successful open connection, run query
             if($conn.state -eq 'Open'){
                     Write-Verbose "----------------------------------------------------------"
                     Write-Verbose "Open() successful.... Connection Details:"
@@ -176,10 +176,10 @@ q
                 }
                 $FolderList = Get-ChildItem @ItemParams
 
-                $folderlist | ForEach-Object{
-                    if ((Get-ChildItem -literalpath $_.FullName).count -lt 1) {
+                $FolderList | ForEach-Object{
+                    if ((Get-ChildItem -LiteralPath $_.FullName).count -lt 1) {
                         [PSCustomObject]@{
-                            EmtpyDirectory = $true
+                            EmptyDirectory = $true
                             Path           = $_.FullName
                         }
                     } else {}
@@ -199,7 +199,7 @@ function Set-WindowTitle {
     Change the PowerShell window title
 
 .EXAMPLE
-    set-windowtitle -title "My Session"
+    set-WindowTitle -title "My Session"
 #>
     Param([string]$Title)
     Process {
@@ -246,22 +246,22 @@ function Set-ConsoleWindowSize
     $WindowSize.Height = $Height
     try{$Host.UI.RawUI.WindowSize = $WindowSize}
     catch [System.Management.Automation.SetValueInvocationException] {
-        $Maxvalue = ($_.Exception.Message |Select-String "\d+").Matches[0].Value
-        $WindowSize.Height = $Maxvalue
+        $MaxValue = ($_.Exception.Message |Select-String "\d+").Matches[0].Value
+        $WindowSize.Height = $MaxValue
         $Host.UI.RawUI.WindowSize = $WindowSize
     }
 }
 function Lock-Screen {
     Param()
     Process {
-            if($ismacos){pmset sleepnow}
-            if($islinux){gnome-screensaver-command -l}
-            if($iswindows){$xCmdString = {rundll32.exe user32.dll,LockWorkStation};Invoke-Command $xCmdString}
+            if($IsMacOS){pmset sleepnow}
+            if($IsLinux){gnome-screensaver-command -l}
+            if($IsWindows){$xCmdString = {rundll32.exe user32.dll,LockWorkStation};Invoke-Command $xCmdString}
         }
     }
 function Get-UI {
     Process {
-        $host.ui.rawui #Because I'm tired of googleing to find this variable
+        $host.ui.rawui #Because I'm tired of googling to find this variable
     }
 }
 function get-whoami {
@@ -330,11 +330,11 @@ Function Out-ScreenGrid {
         )
     Process {
 # Setup Variables
-        $MyWidth = $host.UI.RawUI.Windowsize.Width
+        $MyWidth = $host.UI.RawUI.WindowSize.Width
         $Reset = $PSStyle.Reset
-        $OddLinesFormat = $psstyle.Background.cyan + $PSStyle.Foreground.Black
-        $EvenLinesFormat = $PSStyle.Background.brightCyan + $psstyle.Foreground.Black
-        $HeaderLineFormat = $psstyle.Bold+$psstyle.Underline+$PSStyle.Background.blue + $psstyle.Foreground.white
+        $OddLinesFormat = $PSStyle.Background.cyan + $PSStyle.Foreground.Black
+        $EvenLinesFormat = $PSStyle.Background.brightCyan + $PSStyle.Foreground.Black
+        $HeaderLineFormat = $PSStyle.Bold+$PSStyle.Underline+$PSStyle.Background.blue + $PSStyle.Foreground.white
         $MaxColumns = 5
 <#
 Create options for
@@ -344,13 +344,13 @@ Create options for
         Paging
 #>
     # Convert Object into String CSV to format
-        $StringData = ($InputObject) | Convertto-CSV -delimiter "|" -QuoteFields ""
+        $StringData = ($InputObject) | ConvertTo-CSV -delimiter "|" -QuoteFields ""
     # Convert Header row into an array
         $Header = $StringData[0].split("|")
     # Calc number of columns up to 5
         $ColumnNumber = if($Header.count -le $MaxColumns){$Header.count}else{$MaxColumns}
         $Offset = $ColumnNumber + 5
-    # Calc Column width for formating
+    # Calc Column width for formatting
         $ColumnWidth = [math]::Round(($MyWidth - $Offset) / $ColumnNumber)
     # Convert object into formatted table
         $RowIdx = 0 # Row Index
@@ -374,7 +374,7 @@ Create options for
         clear-host
         write-host $OutputString
         If($TableFooter.length -gt 0){Write-host $HeaderLineFormat$TableFooter$Reset}else{
-            if($nofooter -eq $false){write-host $psstyle.Formatting.Warning"<END>"$Reset}}
+            if($NoFooter -eq $false){write-host $PSStyle.Formatting.Warning"<END>"$Reset}}
     }
 }
 
@@ -396,22 +396,22 @@ Function Get-SQLSessionInfo {
         Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Micorosft SQL Server host to query for sessions.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
         Newer SQL Server clients will not connect if the server certificate is not
-        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $flase" will
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
         remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
-        is the current user with Intergrated Security.
+        is the current user with Integrated Security.
 
     .PARAMETER IncludeMySPID
         If -IncludeMySPID is used the Comandlet will filter out the current SPID's session from the returned sessions.
 
     .PARAMETER SPID
-        Using -SPID will let you send an array of SPIDs for the Commandlet to filter to only the sessions you are intrested.
+        Using -SPID will let you send an array of SPIDs for the Commandlet to filter to only the sessions you are interested.
 
     .PARAMETER SearchLoginName
         -SearchLoginName allows you to filter returned sessions by login name.
@@ -427,8 +427,8 @@ Function Get-SQLSessionInfo {
             $cred = Get-Credential
             Get-SQLSessionInfo -ServerInstance "127.0.0.1,1433"  -Credential $cred -Verbose -IncludeMySPID
     .EXAMPLE
-        #Use Get-SQLSessionInfo to select from an out-gridview then run again for only the selected SPID(s)
-            $target = Get-SQLSessionInfo -ServerInstance "localhost"  -Credential $cred -TrustServerCertificate -Verbose| Select-Object SPID,Status,LoginName,HostName,LoginTime,Command,CPUTime,Reads,Writes,ElapsedSeconds| out-consolegridview
+        #Use Get-SQLSessionInfo to select from an out-GridView then run again for only the selected SPID(s)
+            $target = Get-SQLSessionInfo -ServerInstance "localhost"  -Credential $cred -TrustServerCertificate -Verbose| Select-Object SPID,Status,LoginName,HostName,LoginTime,Command,CPUTime,Reads,Writes,ElapsedSeconds| out-consoleGridView
             Get-SQLSessionInfo -ServerInstance "localhost"  -Credential $cred  -spid $target.SPID -Verbose -TrustServerCertificate
 
 
@@ -469,7 +469,7 @@ Function Get-SQLSessionInfo {
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
-        ,[pscredential]$Credential
+        ,[PSCredential]$Credential
         ,[switch]$IncludeMySPID
         ,[array]$SPID
         ,[array]$SearchLoginName
@@ -489,7 +489,7 @@ Function Get-SQLSessionInfo {
     # Get current SPID and test server connection, Exit if SQL call fails.
         Write-Verbose "Get current user SPID"
         $SQLGetMySPID = "Select convert(varchar(10),@@SPID) as 'MYSPID'"
-        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
+        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
         Write-Verbose ("Running user's SPID: "+$MYSPID.MYSPID)
 
     # Script to look up sessions
@@ -522,7 +522,7 @@ SELECT
         ) + 1
     ) AS 'StatementText',
     Coalesce(
-        Quotename (Db_name (st.dbid)) + N'.' + Quotename (Object_schema_name (st.objectid, st.dbid)) + N'.' + Quotename (Object_name (st.objectid, st.dbid)),
+        QuoteName (Db_name (st.dbid)) + N'.' + QuoteName (Object_schema_name (st.objectid, st.dbid)) + N'.' + QuoteName (Object_name (st.objectid, st.dbid)),
         ''
     ) AS 'CommandText',
     r.command as 'Command',
@@ -546,7 +546,7 @@ ORDER BY
 
     # Query SPIDs
         Write-Verbose "Get All SPIDs"
-        try{$RunningSessions = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw }
+        try{$RunningSessions = invoke-sql @SQLParams -query $sql -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw }
         if ($RunningSessions.count -lt 0){Write-Verbose "No SPID(s) found"}else{Write-Verbose ($RunningSessions.count.ToString() + " SPID(s) Found")}
 
     ###### Filter records based on parameters
@@ -561,7 +561,7 @@ ORDER BY
     # If OnlyCommandText then only return where CommandText has a value
         if($OnlyStatementText -eq $true){$RunningSessions = $RunningSessions | where-object {$_.StatementText.length -gt 1};Write-Verbose ("Only showing where StatementText has a value.")}
     ######
-        #Ouput any remaining records
+        #Output any remaining records
         return $RunningSessions | Sort-Object -Property SPID
     }
 }
@@ -585,16 +585,16 @@ Function Get-SQLJobInfo {
         Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Micorosft SQL Server host to query for sessions.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
         Newer SQL Server clients will not connect if the server certificate is not
-        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $flase" will
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
         remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
-        is the current user with Intergrated Security.
+        is the current user with Integrated Security.
 
     .PARAMETER IgnoreDisabled
         If IgnoreDisabled is true then disabled jobs will be excluded from the results
@@ -625,7 +625,7 @@ Function Get-SQLJobInfo {
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
-        ,[pscredential]$Credential
+        ,[PSCredential]$Credential
         ,[switch]$IgnoreDisabled
         ,[string]$SearchName
         )
@@ -683,8 +683,8 @@ select
                  when sSCH.freq_relative_interval = 8 then 'Fourth'
                  when sSCH.freq_relative_interval = 16 then 'Last'
                  else 'Unknown' end + ' ' + case when sSCH.freq_interval = 1 then  'Sunday'
-                                                                when sSCH.freq_interval = 2 then  'Moday'
-                                                                when sSCH.freq_interval = 3 then  'Tusday'
+                                                                when sSCH.freq_interval = 2 then  'Monday'
+                                                                when sSCH.freq_interval = 3 then  'Tuesday'
                                                                 when sSCH.freq_interval = 4 then  'Wednesday'
                                                                 when sSCH.freq_interval = 5 then  'Thursday'
                                                                 when sSCH.freq_interval = 6 then  'Friday'
@@ -776,15 +776,15 @@ order by
     j.name,j.job_id,sx.step_id"
 
     # Query Jobs
-        Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
+        Write-Verbose "Attempting to retrieve jobs."
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
-    # If IgnoreDiabled remove disabled jobs
-        if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoreing disabled jobs.")}
+    # If IgnoreDisabled remove disabled jobs
+        if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoring disabled jobs.")}
     # If only looking at specific login names remove all but those login names
-        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $Searchname -or $_.stepName -like $Searchname} ;Write-Verbose ("Including Name Search: "+$SearchName)}
-    #Ouput any remaining records
+        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
+    #Output any remaining records
         if ($SQLAgentJobs.count -gt 0){$Final = "Record Count after filters: "+$SQLAgentJobs.count}else{$Final = "Record Count after filters: 0"}
         Write-Verbose  ($final)
         return $SQLAgentJobs | Sort-Object -Property JobName
@@ -808,16 +808,16 @@ Function Get-SQLRunningJobs {
         Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Micorosft SQL Server host to query for sessions.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
         Newer SQL Server clients will not connect if the server certificate is not
-        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $flase" will
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
         remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
-        is the current user with Intergrated Security.
+        is the current user with Integrated Security.
 
     .PARAMETER SearchName
         If a string is provided Job Names and Step Names will be searched for the string.
@@ -844,7 +844,7 @@ Function Get-SQLRunningJobs {
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
-        ,[pscredential]$Credential
+        ,[PSCredential]$Credential
         ,[string]$SearchName
         )
     Process {
@@ -882,13 +882,13 @@ WHERE
 AND start_execution_date is not null
 AND stop_execution_date is null"
 
-    # Query jobss
-        Write-Verbose "Attempting to retreive jobs."
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
+    # Query jobs
+        Write-Verbose "Attempting to retrieve jobs."
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s) Found")}
     # If only looking at specific login names remove all but those login names
-        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $Searchname -or $_.stepName -like $Searchname} ;Write-Verbose ("Including Name Search: "+$SearchName)}
+        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
     #Ouput any remaining records
         return $SQLAgentJobs
     }
@@ -899,7 +899,7 @@ Function Get-SQLJobHistory {
         Returns a list of SQL Agent Job History on a Microsoft SQL Server
 
     .DESCRIPTION
-        Get-SQLJobHistory is a function that returns a list of Microsoft SQL Server SQL Agent Job Hisotry.  Additional options
+        Get-SQLJobHistory is a function that returns a list of Microsoft SQL Server SQL Agent Job History.  Additional options
         will let you filter the results.
 
         The Module SQLServer must be installed, the function will test each time it's run and provide the command to
@@ -910,11 +910,11 @@ Function Get-SQLJobHistory {
         Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Micorosft SQL Server host to query for sessions.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
         Newer SQL Server clients will not connect if the server certificate is not
-        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $flase" will
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
         remove this parameter.
 
     .PARAMETER Credential
@@ -950,7 +950,7 @@ Function Get-SQLJobHistory {
     Param(
         [Parameter(Mandatory,ValueFromPipeline)][String]$ServerInstance
         ,[switch]$TrustServerCertificate
-        ,[pscredential]$Credential
+        ,[PSCredential]$Credential
         ,[switch]$IgnoreDisabled
         ,[string]$SearchName
         )
@@ -994,14 +994,14 @@ J.Name asc,h.run_date desc, h.run_time desc
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
         Write-Verbose ($sql -f $SearchName)
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query ($sql -f $SearchName) -ErrorAction silentlycontinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query ($sql -f $SearchName) -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
         if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoreing disabled jobs.")}
     # # If only looking at specific login names remove all but those login names
     # Removed so you can target jobs by name only
-    #     if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $Searchname -or $_.stepName -like $Searchname} ;Write-Verbose ("Including Name Search: "+$SearchName)}
+    #     if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
     #Ouput any remaining records
         if ($SQLAgentJobs.count -gt 0){$Final = "Record Count after filters: "+$SQLAgentJobs.count}else{$Final = "Record Count after filters: 0"}
         Write-Verbose  ($final)
@@ -1049,7 +1049,7 @@ function Format-ColorBar {
         $Display = [Math]::Round($width * ($percent / 100))
         $Output = ('').padright($Display,"█")
         $Output += ('').padright($Width - $Display,"░")
-        If ($ForegroundColor.Length -gt 0){$Output = $psstyle.Foreground.$ForegroundColor + $Output + $PSStyle.Reset}
+        If ($ForegroundColor.Length -gt 0){$Output = $PSStyle.Foreground.$ForegroundColor + $Output + $PSStyle.Reset}
         return $Output
     }
 }
