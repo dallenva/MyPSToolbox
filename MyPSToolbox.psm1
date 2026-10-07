@@ -65,6 +65,7 @@ function Invoke-SQL {
         [CmdletBinding()]
         Param([parameter(Mandatory)][string]$ServerInstance
                 ,[parameter(Mandatory)][string]$Query
+                ,[hashtable]$QueryParameters = @{}
                 ,[string]$Database
                 ,[int]$ConnectionTimeout=10
                 ,[PSCredential]$Credential = $null
@@ -104,6 +105,9 @@ function Invoke-SQL {
                     write-verbose ("WorkstationId: " + $conn.WorkstationId)
                     $time = measure-command{$ExecSQL = New-Object system.Data.SqlClient.SqlCommand($Query, $conn)
                                             $ExecSQL.CommandTimeout = 720
+                                            foreach ($ParameterName in $QueryParameters.Keys) {
+                                                [void]$ExecSQL.Parameters.AddWithValue("@$ParameterName", $QueryParameters[$ParameterName])
+                                            }
     # Convert result to table
                                             $Results = New-Object System.Data.SqlClient.SqlDataAdapter($ExecSQL)
                                             $Data = New-Object System.Data.DataSet
@@ -889,7 +893,7 @@ AND stop_execution_date is null"
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s) Found")}
     # If only looking at specific login names remove all but those login names
         if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
-    #Ouput any remaining records
+    #Output any remaining records
         return $SQLAgentJobs
     }
 }
@@ -919,7 +923,7 @@ Function Get-SQLJobHistory {
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
-        is the current user with Intergrated Security.
+        is the current user with Integrated Security.
 
     .PARAMETER IgnoreDisabled
         If IgnoreDisabled is true then disabled jobs will be excluded from the results
@@ -986,15 +990,15 @@ FROM
 sysjobs J
 INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
 where
-j.name like '{0}'
+j.name like @SearchName
 ORDER BY
 J.Name asc,h.run_date desc, h.run_time desc
     "
 
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
-        Write-Verbose ($sql -f $SearchName)
-        try{$SQLAgentJobs = invoke-sql @SQLParams -query ($sql -f $SearchName) -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
+        Write-Verbose $sql
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -QueryParameters @{ SearchName = $SearchName } -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
         if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
