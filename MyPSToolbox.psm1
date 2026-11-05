@@ -3,19 +3,20 @@
 function Invoke-SQL {
     <#
         .SYNOPSIS
-            Invoke-SQL is an alternative to Invoke-Sqlcmd that does not require the SQLServer module to be installed. It uses the .NET SQL client.
+            Invoke-SQL is an alternative to Invoke-Sqlcmd that does not require the SQLServer module to be installed.  It uses the .Net SQLClient
 
         .DESCRIPTION
-            Invoke-SQL is an alternative to Invoke-Sqlcmd that does not require the SQLServer module. It uses the .NET SQL client to query SQL Server.
+            Invoke-SQL is an alternative to Invoke-Sqlcmd that does not require the SQLServer module.  It uses the .Net SQLClient to query SQL Server.
 
-            Selecting -Verbose will display safe connection metadata.
+            Selecting -Verbose will display the connection string being used.  -ShowPassword will display the password in the connection string.
 
         .PARAMETER ServerInstance
-            The Microsoft SQL Server host or instance to query.
+            The Microsoft SQL Server host to query for sessions.
 
         .PARAMETER TrustServerCertificate
-            Enables accepting a server certificate that is not trusted locally. Leave
-            this switch off when certificate validation is required.
+            Newer SQL Server clients will not connect if the server certificate is not
+            stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
+            remove this parameter.
 
         .PARAMETER [PSCredential]Credential
             Specifies a user account that has permission to perform this action. The default
@@ -24,324 +25,95 @@ function Invoke-SQL {
         .PARAMETER Database
             The database to query.  The default is the current database.
 
-        .PARAMETER ConnectionTimeout
-            The number of seconds before a connection is considered timed out. The default is 10 seconds.
-            A value of 0 leaves the provider default behavior in effect.
+        .PARAMETER Encryption
+            Encrypt the connection to SQL Server.
 
-        .PARAMETER CommandTimeout
-            The number of seconds before a query is considered timed out. The default is 720 seconds.
+        .PARAMETER ConnectionTimeout
+            The number of seconds before a connection is considered timed out.  The default is 10 seconds.
 
         .PARAMETER Query
-            The query text to submit to SQL Server.
+            The query test to submit to SQL Server.
 
-        .PARAMETER QueryParameters
-            Values for named SQL parameters. Use simple values such as
-            @{ SearchName = '%Backup%' }, or metadata descriptors such as
-            @{ SearchName = @{ Value = '%Backup%'; SqlDbType = 'NVarChar'; Size = 128 } }.
-            Metadata supports Value, SqlDbType, Size, Precision, and Scale.
+        .PARAMETER ShowPassword
+            Will display the password in the connection string if -Verbose is used.
 
         .PARAMETER AdditionalText
-            Additional non-security connection-string options. Supported keys are
-            Application Name, Application Intent, Pooling, Max Pool Size, Min Pool Size,
-            and Load Balance Timeout.
-
-        .PARAMETER ApplicationName
-            The application name sent to SQL Server.
-
-        .PARAMETER ApplicationIntent
-            The application intent: ReadWrite or ReadOnly.
-
-        .PARAMETER Pooling
-            Enables or disables connection pooling.
-
-        .PARAMETER MaxPoolSize
-            The maximum number of connections in the pool.
-
-        .PARAMETER MinPoolSize
-            The minimum number of connections in the pool.
-
-        .PARAMETER LoadBalanceTimeout
-            The number of seconds before pooled connections are removed.
+            Any additional text to add to the connection string.
 
         .EXAMPLE
             # Using Microsoft SQL Server credentials
                 $cred = Get-Credential
-                Invoke-SQL -ServerInstance "localhost" -Credential $cred -Query "SELECT @@servername as [Server]" -Verbose
+                Invoke-SQL -ServerInstance "localhost" -Credential $cred -Query "SELECT @@servername as 'Server'" -Verbose
 
         .INPUTS
             ServerInstance
-            Query
-            QueryParameters
+            TrustServerCertificate
+            Credential
             Database
             ConnectionTimeout
-            CommandTimeout
-            Credential
-            TrustServerCertificate
+            Credentials
+            ShowPassword
             AdditionalText
-            ApplicationName
-            ApplicationIntent
-            Pooling
-            MaxPoolSize
-            MinPoolSize
-            LoadBalanceTimeout
 
         .OUTPUTS
-            System.Data.DataTable
+            Dataset
 
         .NOTES
             Author:  David Allen
             Email: dallenva@gmail.com
         #>
         [CmdletBinding()]
-        Param([parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ServerInstance
-                ,[parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Query
-                ,[ValidateNotNull()][hashtable]$QueryParameters = @{}
-                ,[ValidateScript({
-                    if([string]::IsNullOrWhiteSpace($_)) {
-                        throw 'Database cannot be empty or whitespace.'
-                    }
-                    $true
-                })][string]$Database
-                ,[ValidateRange(0,2147483647)][int]$ConnectionTimeout=10
-                ,[ValidateRange(0,2147483647)][int]$CommandTimeout=720
+        Param([parameter(Mandatory)][string]$ServerInstance
+                ,[parameter(Mandatory)][string]$Query
+                ,[hashtable]$QueryParameters = @{}
+                ,[string]$Database
+                ,[int]$ConnectionTimeout=10
                 ,[PSCredential]$Credential = $null
+                ,[switch]$Encryption
                 ,[switch]$TrustServerCertificate
-                ,[string]$AdditionalText
-                ,[string]$ApplicationName
-                ,[ValidateSet('ReadWrite','ReadOnly')][string]$ApplicationIntent
-                ,[bool]$Pooling
-                ,[ValidateRange(0,2147483647)][int]$MaxPoolSize
-                ,[ValidateRange(0,2147483647)][int]$MinPoolSize
-                ,[ValidateRange(0,2147483647)][int]$LoadBalanceTimeout)
+                ,[switch]$ShowPassword
+                ,[string]$AdditionalText)
         Process {
-            if($PSBoundParameters.ContainsKey('MinPoolSize') -and
-                $PSBoundParameters.ContainsKey('MaxPoolSize') -and
-                $MinPoolSize -gt $MaxPoolSize) {
-                throw 'MinPoolSize cannot be greater than MaxPoolSize.'
-            }
     # Build Connection
-            $conn = [System.Data.SqlClient.SqlConnection]::new()
-            $ExecSQL = $null
-            $Results = $null
+            $conn = new-object System.Data.SqlClient.SQLConnection
     # Build Connection String
-            $ConnectionStringBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
-            $ConnectionStringBuilder['Data Source'] = $ServerInstance
-            If($Database.Length -gt 0) {$ConnectionStringBuilder['Initial Catalog'] = $Database}
-            If($ConnectionTimeout -gt 0) {$ConnectionStringBuilder['Connect Timeout'] = $ConnectionTimeout}
-            If($Credential) {
-                $ConnectionStringBuilder['Integrated Security'] = $false
-                $ConnectionStringBuilder['User ID'] = $Credential.UserName
-                $ConnectionStringBuilder['Password'] = $Credential.GetNetworkCredential().Password
-            } else {
-                $ConnectionStringBuilder['Integrated Security'] = $true
-            }
-            $ConnectionStringBuilder['Encrypt'] = $true
-            $ConnectionStringBuilder['TrustServerCertificate'] = $TrustServerCertificate.IsPresent
-            if($AdditionalText) {
-                try {
-                    $AdditionalConnectionStringBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($AdditionalText)
-                } catch {
-                    throw "AdditionalText is not a valid connection-string fragment: $($_.Exception.Message)"
-                }
-                $AllowedAdditionalKeys = @(
-                    'Application Name',
-                    'Application Intent',
-                    'Pooling',
-                    'Max Pool Size',
-                    'Min Pool Size',
-                    'Load Balance Timeout'
-                )
-                foreach($Key in $AdditionalConnectionStringBuilder.Keys) {
-                    if($Key -notin $AllowedAdditionalKeys) {
-                        throw "AdditionalText contains unsupported connection-string key '$Key'. Use an explicit parameter instead."
-                    }
-                    $ConnectionStringBuilder[$Key] = $AdditionalConnectionStringBuilder[$Key]
-                }
-            }
-            if($PSBoundParameters.ContainsKey('ApplicationName')) {$ConnectionStringBuilder['Application Name'] = $ApplicationName}
-            if($PSBoundParameters.ContainsKey('ApplicationIntent')) {$ConnectionStringBuilder['ApplicationIntent'] = $ApplicationIntent}
-            if($PSBoundParameters.ContainsKey('Pooling')) {$ConnectionStringBuilder['Pooling'] = $Pooling}
-            if($PSBoundParameters.ContainsKey('MaxPoolSize')) {$ConnectionStringBuilder['Max Pool Size'] = $MaxPoolSize}
-            if($PSBoundParameters.ContainsKey('MinPoolSize')) {$ConnectionStringBuilder['Min Pool Size'] = $MinPoolSize}
-            if($PSBoundParameters.ContainsKey('LoadBalanceTimeout')) {$ConnectionStringBuilder['Load Balance Timeout'] = $LoadBalanceTimeout}
-            $ConnectionString = $ConnectionStringBuilder.ConnectionString
-            Write-Verbose ("SQL connection target: Server={0}; Database={1}; Encrypt={2}; TrustServerCertificate={3}" -f
-                $ConnectionStringBuilder['Data Source'],
-                $ConnectionStringBuilder['Initial Catalog'],
-                $ConnectionStringBuilder['Encrypt'],
-                $ConnectionStringBuilder['TrustServerCertificate'])
-            foreach ($ParameterName in $QueryParameters.Keys) {
-                if($ParameterName -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
-                    throw "Invalid SQL parameter name: $ParameterName"
-                }
-                $ParameterSpec = $QueryParameters[$ParameterName]
-                $ParsedSqlDbType = $null
-                if($ParameterSpec -is [hashtable]) {
-                    $AllowedMetadataKeys = @('Value','SqlDbType','Size','Precision','Scale')
-                    $UnexpectedMetadataKeys = @($ParameterSpec.Keys | Where-Object {$_ -notin $AllowedMetadataKeys})
-                    if($UnexpectedMetadataKeys.Count -gt 0) {
-                        throw "Unsupported SQL parameter metadata key for '$ParameterName': $($UnexpectedMetadataKeys -join ', ')"
-                    }
-                    if(-not $ParameterSpec.ContainsKey('Value')) {
-                        throw "SQL parameter metadata for '$ParameterName' must include a Value."
-                    }
-                    if($ParameterSpec.ContainsKey('SqlDbType')) {
-                        try {
-                            $ParsedSqlDbType = [System.Enum]::Parse([System.Data.SqlDbType], [string]$ParameterSpec.SqlDbType, $true)
-                        } catch {
-                            throw "Invalid SqlDbType for SQL parameter '$ParameterName': $($ParameterSpec.SqlDbType)"
-                        }
-                    }
-                    if($ParameterSpec.ContainsKey('Size') -and
-                        ($ParameterSpec.Size -isnot [int] -or $ParameterSpec.Size -lt -1 -or $ParameterSpec.Size -eq 0)) {
-                        throw "Invalid Size for SQL parameter '$ParameterName': $($ParameterSpec.Size)"
-                    }
-                    if($ParameterSpec.ContainsKey('Precision') -and
-                        ($ParameterSpec.Precision -isnot [byte] -and $ParameterSpec.Precision -isnot [int] -or
-                        $ParameterSpec.Precision -lt 1 -or $ParameterSpec.Precision -gt 38)) {
-                        throw "Invalid Precision for SQL parameter '$ParameterName': $($ParameterSpec.Precision)"
-                    }
-                    if($ParameterSpec.ContainsKey('Scale') -and
-                        ($ParameterSpec.Scale -isnot [byte] -and $ParameterSpec.Scale -isnot [int] -or
-                        $ParameterSpec.Scale -lt 0 -or
-                        ($ParameterSpec.ContainsKey('Precision') -and $ParameterSpec.Scale -gt $ParameterSpec.Precision))) {
-                        throw "Invalid Scale for SQL parameter '$ParameterName': $($ParameterSpec.Scale)"
-                    }
-                    if($ParameterSpec.ContainsKey('Precision') -xor $ParameterSpec.ContainsKey('Scale')) {
-                        throw "Precision and Scale must be provided together for SQL parameter '$ParameterName'."
-                    }
-                    if(($ParameterSpec.ContainsKey('Precision') -or $ParameterSpec.ContainsKey('Scale')) -and
-                        $ParsedSqlDbType -notin @([System.Data.SqlDbType]::Decimal, [System.Data.SqlDbType]::Numeric, [System.Data.SqlDbType]::Time)) {
-                        throw "Precision and Scale are not supported for SQL parameter '$ParameterName' with type $ParsedSqlDbType."
-                    }
-                    if($ParameterSpec.ContainsKey('Size') -and
-                        $ParsedSqlDbType -notin @(
-                            [System.Data.SqlDbType]::Char,
-                            [System.Data.SqlDbType]::NChar,
-                            [System.Data.SqlDbType]::VarChar,
-                            [System.Data.SqlDbType]::NVarChar,
-                            [System.Data.SqlDbType]::Text,
-                            [System.Data.SqlDbType]::NText,
-                            [System.Data.SqlDbType]::Binary,
-                            [System.Data.SqlDbType]::VarBinary,
-                            [System.Data.SqlDbType]::Image
-                        )) {
-                        throw "Size is not supported for SQL parameter '$ParameterName' with type $ParsedSqlDbType."
-                    }
-                }
-                $Value = if($ParameterSpec -is [hashtable]) {$ParameterSpec.Value} else {$ParameterSpec}
-                if($null -ne $Value -and $Value.GetType().FullName -notin @(
-                    'System.String',
-                    'System.Int32',
-                    'System.Int64',
-                    'System.Decimal',
-                    'System.Double',
-                    'System.Boolean',
-                    'System.DateTime',
-                    'System.Guid',
-                    'System.Byte[]'
-                )) {
-                    throw "Unsupported SQL parameter value type for '$ParameterName': $($Value.GetType().FullName)"
-                }
-            }
-    # Set Connection String and execute the query
-            try {
-                $conn.ConnectionString = $ConnectionString
-                $conn.Open()
+            $ConnectionString = "Server='{0}'" -f $ServerInstance
+            If($Database.Length -gt 0) {$ConnectionString += ";Database='{0}'" -f $Database}
+            If($ConnectionTimeout -gt 0) {$ConnectionString += ";Connect Timeout={0}" -f $ConnectionTimeout}
+            If($Credential.length -gt 0) {$ConnectionString += ";Integrated Security=false;User ID='{0}';Password='{1}'" -f $Credential.UserName, $Credential.GetNetworkCredential().Password}else{$ConnectionString += ";Integrated Security=true"}
+            If($Encryption) {$ConnectionString += ";Encrypt='Yes'"}
+            If($TrustServerCertificate-eq $true) {$ConnectionString += ";TrustServerCertificate='Yes'"}
+            if($AdditionalText) {$ConnectionString += ";{0}" -f $AdditionalText}
+            $InfoConStr = $ConnectionString
+            if($ShowPassword-eq $false -and $credential.length -gt 0){$InfoConStr = $InfoConStr.Replace(($Credential.GetNetworkCredential().Password),"********")}
+            $Info = ("SQL ConnectionString before trying to connect: " + $InfoConStr)
+            Write-Verbose $Info
+    # Set Connection String
+            try{$conn.ConnectionString = $ConnectionString}catch{throw $_}
+    # Open Connection
+            $conn.Open()
 
     # If successful open connection, run query
-                if($conn.state -eq 'Open'){
+            if($conn.state -eq 'Open'){
                     Write-Verbose "----------------------------------------------------------"
                     Write-Verbose "Open() successful.... Connection Details:"
                     Write-Verbose ("Query Started: " + (Get-Date))
-                    write-verbose ("Connection established: Server={0}; Database={1}; Encrypted={2}" -f
-                        $conn.DataSource,
-                        $conn.Database,
-                        $ConnectionStringBuilder['Encrypt'])
+                    write-verbose ("ConnectionString: " + $conn.ConnectionString)
                     write-verbose ("Database: " + $conn.Database)
                     write-verbose ("DataSource: " + $conn.DataSource)
                     write-verbose ("ServerVersion: " + $conn.ServerVersion)
                     write-verbose ("WorkstationId: " + $conn.WorkstationId)
-                    $time = Measure-Command{$ExecSQL = [System.Data.SqlClient.SqlCommand]::new($Query, $conn)
-                                            $ExecSQL.CommandTimeout = $CommandTimeout
+                    $time = measure-command{$ExecSQL = New-Object system.Data.SqlClient.SqlCommand($Query, $conn)
+                                            $ExecSQL.CommandTimeout = 720
                                             foreach ($ParameterName in $QueryParameters.Keys) {
-                                                $Value = $QueryParameters[$ParameterName]
-                                                $ParameterSpec = $Value
-                                                if($ParameterSpec -is [hashtable]) {
-                                                    $Value = $ParameterSpec.Value
-                                                }
-                                                $ExplicitSqlDbType = $null
-                                                if($ParameterSpec -is [hashtable] -and $ParameterSpec.ContainsKey('SqlDbType')) {
-                                                    $ExplicitSqlDbType = [System.Enum]::Parse([System.Data.SqlDbType], [string]$ParameterSpec.SqlDbType, $true)
-                                                }
-                                                if($null -ne $ExplicitSqlDbType) {
-                                                    $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", $ExplicitSqlDbType)
-                                                    if($ParameterSpec.ContainsKey('Size')) {$Parameter.Size = $ParameterSpec.Size}
-                                                    if($ExplicitSqlDbType -in @([System.Data.SqlDbType]::Decimal, [System.Data.SqlDbType]::Numeric)) {
-                                                        if($ParameterSpec.ContainsKey('Precision')) {
-                                                            $Parameter.Precision = $ParameterSpec.Precision
-                                                            $Parameter.Scale = $ParameterSpec.Scale
-                                                        } elseif($Value -is [decimal]) {
-                                                            $DecimalBits = [decimal]::GetBits($Value)
-                                                            $Parameter.Scale = [byte](($DecimalBits[3] -shr 16) -band 0x7f)
-                                                            $Digits = $Value.ToString([Globalization.CultureInfo]::InvariantCulture).Replace('.', '').TrimStart('-').TrimStart('0')
-                                                            $Parameter.Precision = [byte][Math]::Max(1, $Digits.Length)
-                                                        } else {
-                                                            $Parameter.Precision = 18
-                                                            $Parameter.Scale = 0
-                                                        }
-                                                    } elseif($ParameterSpec.ContainsKey('Precision') -or $ParameterSpec.ContainsKey('Scale')) {
-                                                        $Parameter.Precision = $ParameterSpec.Precision
-                                                        $Parameter.Scale = $ParameterSpec.Scale
-                                                    }
-                                                    $Parameter.Value = if($null -eq $Value) {[DBNull]::Value} else {$Value}
-                                                    continue
-                                                }
-                                                if($null -eq $Value) {
-                                                    $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::NVarChar, 4000)
-                                                    $Parameter.Value = [DBNull]::Value
-                                                    continue
-                                                }
-
-                                                switch($Value.GetType().FullName) {
-                                                    'System.Int32' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::Int)
-                                                    }
-                                                    'System.Int64' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::BigInt)
-                                                    }
-                                                    'System.Decimal' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::Decimal)
-                                                        $DecimalBits = [decimal]::GetBits($Value)
-                                                        $Parameter.Scale = [byte](($DecimalBits[3] -shr 16) -band 0x7f)
-                                                        $Digits = $Value.ToString([Globalization.CultureInfo]::InvariantCulture).Replace('.', '').TrimStart('-').TrimStart('0')
-                                                        $Parameter.Precision = [byte][Math]::Max(1, $Digits.Length)
-                                                    }
-                                                    'System.Double' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::Float)
-                                                    }
-                                                    'System.Boolean' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::Bit)
-                                                    }
-                                                    'System.DateTime' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::DateTime2)
-                                                    }
-                                                    'System.Guid' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::UniqueIdentifier)
-                                                    }
-                                                    'System.Byte[]' {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::VarBinary, -1)
-                                                    }
-                                                    default {
-                                                        $Parameter = $ExecSQL.Parameters.Add("@$ParameterName", [System.Data.SqlDbType]::NVarChar, 4000)
-                                                    }
-                                                }
-                                                $Parameter.Value = $Value
+                                                [void]$ExecSQL.Parameters.AddWithValue("@$ParameterName", $QueryParameters[$ParameterName])
                                             }
     # Convert result to table
-                                            $Results = [System.Data.SqlClient.SqlDataAdapter]::new($ExecSQL)
-                                            $Data = [System.Data.DataSet]::new()
-                                            [void]$Results.Fill($Data)}
+                                            $Results = New-Object System.Data.SqlClient.SqlDataAdapter($ExecSQL)
+                                            $Data = New-Object System.Data.DataSet
+                                            [void]$Results.Fill($Data)
+    # Close SQL Connection
+                                            $conn.Close()}
                     $Info = "Elapsed Seconds: " + $time.TotalSeconds
                     Write-Verbose ("Query Ended: " + (Get-Date))
                     Write-Verbose $Info
@@ -349,245 +121,11 @@ function Invoke-SQL {
                     Write-Verbose $Info
                     Write-Verbose "-- End Invoke-SQL ----------------------------------------"
     # Return Results
-                    Return $Data.Tables[0]
-                }
-            }
-            finally {
-                if($Results) {$Results.Dispose()}
-                if($ExecSQL) {$ExecSQL.Dispose()}
-                if($conn) {
-                    if($conn.State -ne 'Closed') {$conn.Close()}
-                    $conn.Dispose()
-                }
-            }
+                    Return $Data.Tables[0]}
         }
     }
 
-function Write-SQLBulkCopy {
-<#
-.SYNOPSIS
-    Bulk-copy PowerShell objects into an existing SQL Server table.
-
-.DESCRIPTION
-    Streams an in-memory object collection to an existing SQL Server table by
-    using the .NET SqlBulkCopy API. Source property names are matched to target
-    column names by default. Use ColumnMapping when names differ.
-
-    The destination table must already exist, and the source objects should
-    have a consistent set of properties. BatchSize controls how many rows are
-    sent per batch; it does not increase the database service tier's log-rate
-    limit.
-
-.PARAMETER InputObject
-    Objects to upload. Accepts pipeline input.
-
-.PARAMETER ServerInstance
-    The Microsoft SQL Server host or instance to query.
-
-.PARAMETER DestinationTable
-    Existing destination table, optionally schema-qualified, such as
-    dbo.ImportRows.
-
-.PARAMETER Database
-    The database containing the destination table.
-
-.PARAMETER Credential
-    Credentials used to connect. If omitted, integrated security is used.
-
-.PARAMETER TrustServerCertificate
-    Accepts a server certificate that is not trusted locally. Leave this
-    switch off when certificate validation is required.
-
-.PARAMETER BatchSize
-    Number of rows sent in each batch. Defaults to 5,000.
-
-.PARAMETER BulkCopyTimeout
-    Number of seconds before the bulk copy times out. A value of 0 means no
-    timeout. Defaults to 720 seconds.
-
-.PARAMETER ColumnMapping
-    Optional hashtable mapping source property names to target column names,
-    for example @{ SourceName = 'TargetName' }.
-
-.PARAMETER ShowProgress
-    Displays a progress bar while rows are copied.
-
-.PARAMETER ProgressInterval
-    Number of copied rows between progress updates. Defaults to 1,000.
-    This parameter is used only when ShowProgress is specified.
-
-.EXAMPLE
-    Get-Process | Select-Object Name, Id | Write-SQLBulkCopy `
-        -ServerInstance localhost -Database Operations `
-        -DestinationTable dbo.ProcessSnapshot -Credential (Get-Credential)
-
-.EXAMPLE
-    $rows | Write-SQLBulkCopy -ServerInstance localhost `
-        -Database Operations -DestinationTable dbo.ImportRows `
-        -ColumnMapping @{ ExternalId = 'Id'; DisplayName = 'Name' } `
-        -ShowProgress
-
-.INPUTS
-    System.Object
-
-.OUTPUTS
-    PSCustomObject with DestinationTable, RowsCopied, and ElapsedSeconds.
-
-.NOTES
-    Author:  David Allen
-    Email: dallenva@gmail.com
-#>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory, ValueFromPipeline)]
-        [PSObject]$InputObject,
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$ServerInstance,
-        [Parameter(Mandatory)]
-        [ValidatePattern('^(?:\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_$#@]*)(?:\.(?:\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_$#@]*))?$')]
-        [string]$DestinationTable,
-        [Parameter(Mandatory)]
-        [ValidateScript({
-            if ([string]::IsNullOrWhiteSpace($_)) {
-                throw 'Database cannot be empty or whitespace.'
-            }
-            $true
-        })]
-        [string]$Database,
-        [PSCredential]$Credential,
-        [switch]$TrustServerCertificate,
-        [ValidateRange(1, 2147483647)]
-        [int]$BatchSize = 5000,
-        [ValidateRange(0, 2147483647)]
-        [int]$BulkCopyTimeout = 720,
-        [ValidateNotNull()]
-        [hashtable]$ColumnMapping = @{},
-        [switch]$ShowProgress,
-        [ValidateRange(1, 2147483647)]
-        [int]$ProgressInterval = 1000
-    )
-    begin {
-        $Rows = [System.Collections.Generic.List[object]]::new()
-    }
-    process {
-        [void]$Rows.Add($InputObject)
-    }
-    end {
-        if ($Rows.Count -eq 0) {
-            throw 'InputObject did not contain any rows.'
-        }
-
-        $FirstRow = $Rows[0]
-        $Properties = @($FirstRow.PSObject.Properties | Where-Object {
-            $_.MemberType -in @('Property', 'NoteProperty')
-        })
-        if ($Properties.Count -eq 0) {
-            throw 'InputObject must expose at least one property.'
-        }
-
-        $DataTable = [System.Data.DataTable]::new()
-        foreach ($Property in $Properties) {
-            [void]$DataTable.Columns.Add($Property.Name, [object])
-        }
-
-        foreach ($Row in $Rows) {
-            $DataRow = $DataTable.NewRow()
-            foreach ($Property in $Properties) {
-                $SourceProperty = $Row.PSObject.Properties[$Property.Name]
-                $DataRow[$Property.Name] = if ($null -eq $SourceProperty -or $null -eq $SourceProperty.Value) {
-                    [DBNull]::Value
-                } else {
-                    $SourceProperty.Value
-                }
-            }
-            [void]$DataTable.Rows.Add($DataRow)
-        }
-
-        foreach ($SourceName in $ColumnMapping.Keys) {
-            if ($SourceName -notin $DataTable.Columns.ColumnName) {
-                throw "ColumnMapping source '$SourceName' was not found on the input object."
-            }
-            if ([string]::IsNullOrWhiteSpace([string]$ColumnMapping[$SourceName])) {
-                throw "ColumnMapping target for '$SourceName' cannot be empty."
-            }
-        }
-
-        $ConnectionStringBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
-        $ConnectionStringBuilder['Data Source'] = $ServerInstance
-        $ConnectionStringBuilder['Initial Catalog'] = $Database
-        if ($Credential) {
-            $ConnectionStringBuilder['Integrated Security'] = $false
-            $ConnectionStringBuilder['User ID'] = $Credential.UserName
-            $ConnectionStringBuilder['Password'] = $Credential.GetNetworkCredential().Password
-        } else {
-            $ConnectionStringBuilder['Integrated Security'] = $true
-        }
-        $ConnectionStringBuilder['Encrypt'] = $true
-        $ConnectionStringBuilder['TrustServerCertificate'] = $TrustServerCertificate.IsPresent
-
-        $Connection = [System.Data.SqlClient.SqlConnection]::new($ConnectionStringBuilder.ConnectionString)
-        $BulkCopy = $null
-        try {
-            Write-Verbose ("Bulk-copy target: Server={0}; Database={1}; Table={2}; Rows={3}; BatchSize={4}" -f
-                $ServerInstance, $Database, $DestinationTable, $DataTable.Rows.Count, $BatchSize)
-            $Connection.Open()
-            $BulkCopy = [System.Data.SqlClient.SqlBulkCopy]::new($Connection)
-            $BulkCopy.DestinationTableName = $DestinationTable
-            $BulkCopy.BatchSize = $BatchSize
-            $BulkCopy.BulkCopyTimeout = $BulkCopyTimeout
-            $BulkCopy.EnableStreaming = $true
-            $ProgressId = 1
-            $RowsCopiedEventHandler = $null
-            if ($ShowProgress.IsPresent) {
-                $BulkCopy.NotifyAfter = [Math]::Min($ProgressInterval, $DataTable.Rows.Count)
-                $RowsCopiedEventHandler = [System.Data.SqlClient.SqlRowsCopiedEventHandler]{
-                    param($Sender, $EventArgs)
-                    $PercentComplete = [Math]::Min(100, [Math]::Round(($EventArgs.RowsCopied / $DataTable.Rows.Count) * 100, 1))
-                    Write-Progress -Id $ProgressId -Activity "Copying rows to $DestinationTable" `
-                        -Status "$($EventArgs.RowsCopied) of $($DataTable.Rows.Count) rows copied" `
-                        -PercentComplete $PercentComplete
-                }
-                $BulkCopy.add_SqlRowsCopied($RowsCopiedEventHandler)
-            }
-            if ($ColumnMapping.Count -gt 0) {
-                foreach ($SourceName in $ColumnMapping.Keys) {
-                    [void]$BulkCopy.ColumnMappings.Add($SourceName, [string]$ColumnMapping[$SourceName])
-                }
-            } else {
-                foreach ($Property in $Properties) {
-                    [void]$BulkCopy.ColumnMappings.Add($Property.Name, $Property.Name)
-                }
-            }
-            $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-            $BulkCopy.WriteToServer($DataTable)
-            $Stopwatch.Stop()
-            if ($ShowProgress.IsPresent) {
-                Write-Progress -Id $ProgressId -Activity "Copying rows to $DestinationTable" `
-                    -Status "$($DataTable.Rows.Count) of $($DataTable.Rows.Count) rows copied" `
-                    -Completed
-            }
-            [PSCustomObject]@{
-                DestinationTable = $DestinationTable
-                RowsCopied       = $DataTable.Rows.Count
-                ElapsedSeconds   = [Math]::Round($Stopwatch.Elapsed.TotalSeconds, 3)
-            }
-        } catch {
-            Write-Error -ErrorRecord $_
-            throw
-        } finally {
-            if ($BulkCopy -and $RowsCopiedEventHandler) {
-                $BulkCopy.remove_SqlRowsCopied($RowsCopiedEventHandler)
-            }
-            if ($BulkCopy) { $BulkCopy.Close(); $BulkCopy.Dispose() }
-            if ($Connection.State -ne [System.Data.ConnectionState]::Closed) { $Connection.Close() }
-            $Connection.Dispose()
-            $DataTable.Dispose()
-        }
-    }
-}
-
-function Get-EmptyDirectory {
+Function Get-EmptyDirectory {
     <#
     .SYNOPSIS
         Get empty directories using underlying Get-ChildItem cmdlet
@@ -598,18 +136,7 @@ function Get-EmptyDirectory {
         Version: 1.0
         DateCreated: 2021-Oct-2
         Modified David Allen 2024
-
-    .PARAMETER Path
-        Root path to inspect.
-
-    .PARAMETER Recurse
-        Recursively inspect child directories.
-
-    .PARAMETER Depth
-        Maximum recursion depth, from 1 through 15.
-
-    .OUTPUTS
-        PSCustomObject with EmptyDirectory and Path properties.
+q
     .LINK
         https://thesysadminchannel.com/find-empty-folders-powershell/ -
 
@@ -644,7 +171,7 @@ function Get-EmptyDirectory {
                     Path      = $Path
                     Directory = $true
                 }
-                if ($Recurse.IsPresent) {
+                if ($PSBoundParameters.ContainsKey('Recurse')) {
                     $ItemParams.Add('Recurse',$true)
                 }
 
@@ -662,8 +189,7 @@ function Get-EmptyDirectory {
                     } else {}
                 }
             } catch {
-                Write-Error -ErrorRecord $_
-                throw
+                Write-Error $_.Exception.Message
             }
         }
         END {}
@@ -673,17 +199,11 @@ function Set-WindowTitle {
 .SYNOPSIS
     Change the PowerShell window title
 
-.PARAMETER Title
-    The text to display in the PowerShell window title.
+.NOTES
+    Change the PowerShell window title
 
 .EXAMPLE
     set-WindowTitle -title "My Session"
-
-.INPUTS
-    None. Values are supplied through parameters.
-
-.OUTPUTS
-    None.
 #>
     Param([string]$Title)
     Process {
@@ -695,28 +215,16 @@ function Set-Cursor {
 .SYNOPSIS
     Set the X and Y position of the cursor
 
-.PARAMETER X
-    The horizontal cursor position.
-
-.PARAMETER Y
-    The vertical cursor position.
-
 .NOTES
     Author:  David Allen
     Email: dallenva@gmail.com
 
 .EXAMPLE
     Set-Cursor -X 0 -Y 0
-
-.INPUTS
-    None. Values are supplied through parameters.
-
-.OUTPUTS
-    None.
 #>
 Param([int]$x, [int] $y)
 Process {
-    $Host.UI.RawUI.CursorPosition = [System.Management.Automation.Host.Coordinates]::new($x, $y)
+    $Host.UI.RawUI.CursorPosition = New-Object System.Management.Automation.Host.Coordinates $x , $y
 }
 }
 function Set-ConsoleWindowSize
@@ -726,24 +234,12 @@ function Set-ConsoleWindowSize
     Set Width and Height of the console window.  This is dependent on the terminal, VS Code and Windows Terminal
     will not allow this to override the setting.
 
-.PARAMETER Width
-    The requested console width in columns.
-
-.PARAMETER Height
-    The requested console height in rows.
-
 .NOTES
     Author:  David Allen
     Email: dallenva@gmail.com
 
 .EXAMPLE
     Set-ConsoleWindowSize -Width 80 -Height 24
-
-.INPUTS
-    None. Values are supplied through parameters.
-
-.OUTPUTS
-    None.
 #>
     param(
         [int]$Width,
@@ -760,75 +256,23 @@ function Set-ConsoleWindowSize
     }
 }
 function Lock-Screen {
-<#
-.SYNOPSIS
-    Lock the current workstation.
-
-.DESCRIPTION
-    Uses the host operating system's native screen-lock command. The command
-    is supported on Windows, macOS, and Linux environments with the required
-    platform utility installed.
-
-.INPUTS
-    None.
-
-.OUTPUTS
-    None.
-#>
     Param()
     Process {
-            if($IsMacOS) {
-                if (-not (Get-Command pmset -ErrorAction SilentlyContinue)) {
-                    throw 'The pmset command is required to lock the screen on macOS.'
-                }
-                & pmset sleepnow
-            } elseif($IsLinux) {
-                if (-not (Get-Command gnome-screensaver-command -ErrorAction SilentlyContinue)) {
-                    throw 'The gnome-screensaver-command utility is required to lock the screen on Linux.'
-                }
-                & gnome-screensaver-command -l
-            } elseif($IsWindows) {
-                & rundll32.exe user32.dll,LockWorkStation
-            } else {
-                throw 'The current operating system is not supported.'
-            }
+            if($IsMacOS){pmset sleepnow}
+            if($IsLinux){gnome-screensaver-command -l}
+            if($IsWindows){$xCmdString = {rundll32.exe user32.dll,LockWorkStation};Invoke-Command $xCmdString}
         }
     }
 function Get-UI {
-<#
-.SYNOPSIS
-    Return the current PowerShell host UI object.
-
-.INPUTS
-    None.
-
-.OUTPUTS
-    System.Management.Automation.Host.PSHostRawUserInterface
-#>
     Process {
-        $host.UI.RawUI
+        $host.ui.rawui #Because I'm tired of googling to find this variable
     }
 }
 function get-whoami {
-<#
-.SYNOPSIS
-    Display PowerShell, operating system, host, and user information.
-
-.DESCRIPTION
-    Writes a human-readable summary of the current PowerShell session to the
-    host. This function writes directly to the host rather than returning an
-    object.
-
-.INPUTS
-    None.
-
-.OUTPUTS
-    None. Information is written to the host.
-#>
     Write-Host "====================================="
-    Write-Host "PowerShell Edition: " -NoNewline -ForegroundColor Green
-    Write-Host $PSVersionTable.PSEdition -ForegroundColor Cyan
-    Write-Host "PowerShell Version: " -NoNewline -ForegroundColor Green
+    write-host "PowerShell Edition: " -NoNewline -ForegroundColor Green
+    write-host $PSVersionTable.PSEdition -ForegroundColor Cyan
+    write-host "Powershell Version: " -NoNewline -ForegroundColor Green
     Write-Host $PSVersionTable.PSVersion -ForegroundColor Cyan
     $os = if($IsWindows -eq $true){"Windows"}else{if($IsMacOS -eq $true){"MacOS"}else{"Linux"}}
     Write-Host "OS: " -NoNewline -ForegroundColor Green
@@ -844,54 +288,38 @@ function get-whoami {
     Write-Host "User Domain: " -NoNewline -ForegroundColor Green
     Write-Host $env:USERDNSDOMAIN -ForegroundColor Cyan
     Write-Host "Home: " -NoNewline -ForegroundColor Green
-    Write-Host $home -ForegroundColor Cyan
+    write-host $home -ForegroundColor Cyan
     Write-Host "Profile: " -NoNewline -ForegroundColor Green
-    Write-Host $Profile -ForegroundColor Cyan
+    write-host $Profile -ForegroundColor Cyan
     Write-Host "====================================="
 }
 function Get-MyDrives {
-<#
-.SYNOPSIS
-    Return file-system drives available to the current session.
-
-.DESCRIPTION
-    Returns PowerShell file-system provider drives and excludes the drive
-    named Temp.
-
-.INPUTS
-    None.
-
-.OUTPUTS
-    System.Management.Automation.PSDriveInfo
-#>
     $return = Get-PSDrive -PSProvider FileSystem
-    $return | Where-Object {$_.Name -notlike 'Temp'}
+    $return = $return | where-object  {$_.name -notlike "Temp"}
+    return $return
 }
 Function Out-ScreenGrid {
     <#
     .SYNOPSIS
-        This is an alternative to Format-Table. When an object is passed, its
-        text is converted into a table of up to 6 columns with alternating colors.
+        This is an alternative to Format-Table, when an object passed the text is converted into a table
+        of up to 6 columns and colorized with alternating formatting.
 
     .DESCRIPTION
         This was created for a few specific use cases and may not be the best solution for your case.
     .PARAMETER InputObject
-        Any System.Object value. Enclose it in parentheses when needed.
+        Any System Object. Enclose in () if needed
     .PARAMETER TableHeader
         String to appear before the table
-    .PARAMETER TableFooter
-        String to appear after the table.
-    .PARAMETER NoFooter
-        Suppress the table footer.
+    .PARAMETER ShowFooter
+        Show table footer
     .EXAMPLE
-        Out-ScreenGrid -InputObject (Get-ChildItem | Select-Object Name, Extension, CreationTime, LastAccessTime)
+        Out-ScreenGrid -InputObject (Get-ChildItem | select-object name, extension, CreationTime,LastAccessTime)
     .EXAMPLE
-        Out-ScreenGrid -InputObject (Get-Process)
+        Out-ScreenGrid -DataObject (Get-process)
     .INPUTS
         System.Object
         [string]TableHeader
-        [string]TableFooter
-        [switch]NoFooter
+        [Boolean]ShowFooter
     .OUTPUTS
         None
     .NOTES
@@ -942,15 +370,15 @@ Create options for
             ;if($RowIdx -eq 0){$TempRowString = $HeaderLineFormat+$TempRowString+$Reset}else{
                 if (($RowIdx % 2) -ne 0) {$TempRowString = $OddLinesFormat+$TempRowString+$Reset}else
                     {$TempRowString = $EvenLinesFormat+$TempRowString+$Reset}}
-    # The process removes line breaks and adds a single one at the end
+    # The process leave line breaks, remove them and add a single one at the end
             ;$OutputString += [string]::join("",($TempRowString.Split("`n"))) + "`r`n"
             ;$RowIdx += 1
         }until($RowIdx -eq $InputObject.count+1)
     # Send output string to the console
-        Clear-Host
-        Write-Host $OutputString
-        If($TableFooter.Length -gt 0){Write-Host $HeaderLineFormat$TableFooter$Reset}else{
-            if(-not $NoFooter.IsPresent){Write-Host $PSStyle.Formatting.Warning"<END>"$Reset}}
+        clear-host
+        write-host $OutputString
+        If($TableFooter.length -gt 0){Write-host $HeaderLineFormat$TableFooter$Reset}else{
+            if($NoFooter -eq $false){write-host $PSStyle.Formatting.Warning"<END>"$Reset}}
     }
 }
 
@@ -964,52 +392,56 @@ Function Get-SQLSessionInfo {
         commands.  This will return more information from the sessions tables than the built in commands.  Additional options
         will let you filter the results by SPID and LoginName.
 
+        The Module SQLServer must be installed, the function will test each time it's run and provide the command to
+        install if needed.
+
         ServerInstance can also be passed in the pipeline.
 
-        Selecting -Verbose displays safe connection and query details.
+        Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Microsoft SQL Server host or instance to query.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
-        Enables accepting a server certificate that is not trusted locally. Leave
-        this switch off when certificate validation is required.
+        Newer SQL Server clients will not connect if the server certificate is not
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
+        remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
         is the current user with Integrated Security.
 
     .PARAMETER IncludeMySPID
-        By default, the current session is excluded. Use -IncludeMySPID to include it.
+        If -IncludeMySPID is used the Comandlet will filter out the current SPID's session from the returned sessions.
 
     .PARAMETER SPID
-        Using -SPID filters the results to one session ID.
+        Using -SPID will let you send an array of SPIDs for the Commandlet to filter to only the sessions you are interested.
 
     .PARAMETER SearchLoginName
         -SearchLoginName allows you to filter returned sessions by login name.
 
     .PARAMETER Status
-        Using -Status filters results to one request status.
+        Using -Status you can filter on one or more status.
 
     .PARAMETER OnlyStatementText
-        Selecting -OnlyStatementText returns only sessions with non-empty statement text.
+        Selecting -OnlyStatementText will filter to records with an entry in the sys.Dm_exec_sql_text table.
 
     .EXAMPLE
         # Using Microsoft SQL Server credentials
             $cred = Get-Credential
             Get-SQLSessionInfo -ServerInstance "127.0.0.1,1433"  -Credential $cred -Verbose -IncludeMySPID
     .EXAMPLE
-        # Use Get-SQLSessionInfo to select from Out-GridView, then run again for the selected SPID.
-            $target = Get-SQLSessionInfo -ServerInstance "localhost" -Credential $cred -TrustServerCertificate -Verbose | Select-Object SPID, Status, LoginName, HostName, LoginTime, Command, CPUTime, Reads, Writes, ElapsedSeconds | Out-ConsoleGridView
+        #Use Get-SQLSessionInfo to select from an out-GridView then run again for only the selected SPID(s)
+            $target = Get-SQLSessionInfo -ServerInstance "localhost"  -Credential $cred -TrustServerCertificate -Verbose| Select-Object SPID,Status,LoginName,HostName,LoginTime,Command,CPUTime,Reads,Writes,ElapsedSeconds| out-consoleGridView
             Get-SQLSessionInfo -ServerInstance "localhost"  -Credential $cred  -spid $target.SPID -Verbose -TrustServerCertificate
 
 
     .Example
-        # Every 5 seconds for one minute, get sessions and display them on the screen.
+        # Every 5 second for one minute get sessions and display on the screen
             $ctr=0
             do{
                 Clear-Host
-                ;Get-SQLSessionInfo -ServerInstance "localhost" -Credential $cred -TrustServerCertificate | Select-Object SPID, ElapsedSeconds, CPUTime, Reads, Writes | Format-Table
+                ;Get-SQLSessionInfo -ServerInstance "localhost"  -Credential $cred -TrustServerCertificate | select-object SPID,ElapsedSeconds,CPUTime,Reads,Writes | Format-Table
                 ;Start-Sleep -Seconds 5
                 ;$ctr+=1
             }until($ctr -eq 12)
@@ -1017,7 +449,7 @@ Function Get-SQLSessionInfo {
         # ServerInstance can be passed in the pipeline but credentials must be the same for each lookup
             $cred = Get-Credential
             $ServerInstances = "localhost","localhost"
-            $ServerInstances | Get-SQLSessionInfo -Credential $cred -Verbose -TrustServerCertificate -OnlyStatementText | Select-Object SPID, ServerInstance
+            $ServerInstances | Get-SQLSessionInfo  -Credential $cred -Verbose  -TrustServerCertificate -OnlyStatementText | select-object spid,ServerInstance
 
 
     .INPUTS
@@ -1025,10 +457,10 @@ Function Get-SQLSessionInfo {
         TrustServerCertificate
         Credential
         IncludeMySPID
+        OnlyMySPID
         SPID
         SearchLoginName
         Status
-        OnlyStatementText
 
     .OUTPUTS
         System.Array
@@ -1043,9 +475,9 @@ Function Get-SQLSessionInfo {
         ,[switch]$TrustServerCertificate
         ,[PSCredential]$Credential
         ,[switch]$IncludeMySPID
-        ,[int]$SPID
-        ,[string]$SearchLoginName
-        ,[string]$Status
+        ,[array]$SPID
+        ,[array]$SearchLoginName
+        ,[array]$Status
         ,[switch]$OnlyStatementText
         )
     Process {
@@ -1056,30 +488,31 @@ Function Get-SQLSessionInfo {
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
     # Add Credentials if requested
-        if($null -ne $Credential){$SQLParams.Credential = $Credential}
+        if($Credential.count -gt 0){$SQLParams += @{Credential = $Credential}}
 
     # Get current SPID and test server connection, Exit if SQL call fails.
         Write-Verbose "Get current user SPID"
-        $SQLGetMySPID = "Select @@SPID as [MYSPID]"
-        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID}catch{write-error ("Query Failed, check server instance, certificate, and credentials. " + $_.Exception.Message);throw}
+        $SQLGetMySPID = "Select convert(varchar(10),@@SPID) as 'MYSPID'"
+        try{$MYSPID = invoke-sql @SQLParams -query $SQLGetMySPID -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
         Write-Verbose ("Running user's SPID: "+$MYSPID.MYSPID)
 
     # Script to look up sessions
         $sql = "
+USE msdb
 SELECT
-    s.session_id as [SPID],
-    r.status as [Status],
-    r.blocking_session_id as [BlockedBySID],
-    r.wait_type as [WaitType],
-    wait_resource as [WaitResource],
-    r.wait_time / (1000.0) as [WaitSeconds],
-    r.cpu_time as [CPUTime],
-    r.logical_reads as [LogicalReads],
-    r.reads as [Reads],
-    r.writes as [Writes],
-    r.total_elapsed_time / (1000.0) as [ElapsedSeconds],
-    r.total_elapsed_time / (1000.0) / (60) as [ElapsedMinutes],
-    r.total_elapsed_time / (1000.0) / (60) / (60) as [ElapsedHours],
+    s.session_id as 'SPID',
+    r.status as 'Status',
+    r.blocking_session_id as 'BlockedBySID',
+    r.wait_type as 'WaitType',
+    wait_resource as 'WaitResource',
+    r.wait_time / (1000.0) as 'WaitSeconds',
+    r.cpu_time as 'CPUTime',
+    r.logical_reads as 'LogicalReads',
+    r.reads as 'Reads',
+    r.writes as 'Writes',
+    r.total_elapsed_time / (1000.0) as 'ElapsedSeconds',
+    r.total_elapsed_time / (1000.0) / (60) as 'ElapsedMinutes',
+    r.total_elapsed_time / (1000.0) / (60) / (60) as 'ElapsedHours',
     Substring(
         st.TEXT,
         (r.statement_start_offset / 2) + 1,
@@ -1091,58 +524,49 @@ SELECT
                 END - r.statement_start_offset
             ) / 2
         ) + 1
-    ) AS [StatementText],
+    ) AS 'StatementText',
     Coalesce(
         QuoteName (Db_name (st.dbid)) + N'.' + QuoteName (Object_schema_name (st.objectid, st.dbid)) + N'.' + QuoteName (Object_name (st.objectid, st.dbid)),
         ''
-    ) AS [CommandText],
-    r.command as [Command],
-    s.login_name as [LoginName],
-    s.host_name as [HostName],
-    s.program_name as [ProgramName],
-    s.last_request_end_time as [LastRequestEndTime],
-    s.login_time as [LoginTime],
-    r.open_transaction_count as [OpenTransactionCount],
+    ) AS 'CommandText',
+    r.command as 'Command',
+    s.login_name as 'LoginName',
+    s.host_name as 'HostName',
+    s.program_name as 'ProgramName',
+    s.last_request_end_time as 'LastRequestEndTime',
+    s.login_time as 'LoginTime',
+    r.open_transaction_count as 'OpenTransactionCount',
     --r.sql_handle,
-    @@servername as [ServerInstance]
+    @@servername as 'ServerInstance'
 FROM
     sys.dm_exec_sessions AS s
-    Left JOIN sys.dm_exec_requests AS r on r.session_id = s.session_id
+    Inner JOIN sys.dm_exec_requests AS r on r.session_id = s.session_id
     Outer APPLY sys.Dm_exec_sql_text (r.sql_handle) AS st
-WHERE
-    (@ExcludeSPID = 0 OR s.session_id <> @ExcludeSPID)
-    AND (@SPID = 0 OR s.session_id = @SPID)
-    AND (@SearchLoginName IS NULL OR s.login_name = @SearchLoginName)
-    AND (@Status IS NULL OR r.status = @Status)
 ORDER BY
-    CASE WHEN r.session_id IS NULL THEN 1 ELSE 0 END,
     r.cpu_time desc,
     r.status,
     r.blocking_session_id,
     s.session_id"
-        $SessionQueryParameters = @{
-            ExcludeSPID = if($IncludeMySPID) {0} else {[int]$MYSPID.MYSPID}
-            SPID = $SPID
-            SearchLoginName = if($SearchLoginName) {$SearchLoginName} else {$null}
-            Status = if($Status) {$Status} else {$null}
-        }
 
     # Query SPIDs
         Write-Verbose "Get All SPIDs"
-        try{$RunningSessions = @(invoke-sql @SQLParams -query $sql -QueryParameters $SessionQueryParameters)}catch{write-error ("Query Failed, check server instance, certificate, and credentials. " + $_.Exception.Message);throw }
-        if ($null -eq $RunningSessions -or $RunningSessions.Count -eq 0){Write-Verbose "No SPIDs found"}else{Write-Verbose ($RunningSessions.Count.ToString() + " SPIDs found")}
+        try{$RunningSessions = invoke-sql @SQLParams -query $sql -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw }
+        if ($RunningSessions.count -lt 0){Write-Verbose "No SPID(s) found"}else{Write-Verbose ($RunningSessions.count.ToString() + " SPID(s) Found")}
 
     ###### Filter records based on parameters
-    # Filters are applied by SQL
-        if($includeMySPID -eq $true){Write-Verbose ("Including SPID "+$myspid.MYSPID+" for this session.")}else{Write-Verbose ("Excluding SPID: "+$MYSPID.MYSPID)}
-        if($SPID -gt 0){Write-Verbose ("Including SPID: "+$SPID)}
-        if($SearchLoginName){Write-Verbose ("Including Login: "+$SearchLoginName)}
-        if($Status){Write-Verbose ("Only showing for Status: "+$Status)}
+    # If IncludeMySPID is false then remove this session's SPID
+        if($includeMySPID -eq $true){Write-Verbose ("Including SPID "+$myspid.MYSPID+" for this session.")}else{$RunningSessions = $RunningSessions | where-object {$_.SPID -ne $MYSPID.MYSPID};Write-Verbose ("Excluding SPID: "+$MYSPID.MYSPID)}
+    # If only looking at specific SPIDs remove all but those SPIDs
+        if($SPID -gt 0){$RunningSessions = $RunningSessions | where-object {$_.SPID -in $SPID};Write-Verbose ("Including SPID(s): "+$SPID)}
+    # If only looking at specific login names remove all but those login names
+        if($SearchLoginName -gt 0){$RunningSessions = $RunningSessions | where-object {$_.LoginName -in $SearchLoginName};Write-Verbose ("Including Login(s): "+$SearchLoginName)}
+    # If SPIDStatus only return selected status
+        if($Status.count -gt 0){$RunningSessions = $RunningSessions | where-object {$_.Status -in $Status};Write-Verbose ("Only showing for Status: "+$Status)}
     # If OnlyCommandText then only return where CommandText has a value
-        if($OnlyStatementText.IsPresent){$RunningSessions = $RunningSessions | Where-Object {-not [string]::IsNullOrWhiteSpace($_.StatementText)};Write-Verbose ("Only showing where StatementText has a value.")}
+        if($OnlyStatementText -eq $true){$RunningSessions = $RunningSessions | where-object {$_.StatementText.length -gt 1};Write-Verbose ("Only showing where StatementText has a value.")}
     ######
         #Output any remaining records
-        return @($RunningSessions | Sort-Object -Property SPID)
+        return $RunningSessions | Sort-Object -Property SPID
     }
 }
 
@@ -1157,29 +581,30 @@ Function Get-SQLJobInfo {
         Get-SQLJobInfo is a function that returns a list of Microsoft SQL Server SQL Agent Jobs.  Additional options
         will let you filter the results.
 
-        The output contains one row per job schedule and job step. Jobs with multiple schedules
-        therefore appear in multiple rows for each configured step.
+        The Module SQLServer must be installed, the function will test each time it's run and provide the command to
+        install if needed.
 
         ServerInstance can also be passed in the pipeline.
 
-        Selecting -Verbose displays safe connection and query details.
+        Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Microsoft SQL Server host or instance to query.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
-        Enables accepting a server certificate that is not trusted locally. Leave
-        this switch off when certificate validation is required.
+        Newer SQL Server clients will not connect if the server certificate is not
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
+        remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
         is the current user with Integrated Security.
 
     .PARAMETER IgnoreDisabled
-        If specified, disabled jobs are excluded from the results.
+        If IgnoreDisabled is true then disabled jobs will be excluded from the results
 
     .PARAMETER SearchName
-        If provided, job and step names are filtered with this SQL `LIKE` pattern.
+        If a string is provided Job Names and Step Names will be searched for the string.
 
     .EXAMPLE
         # Using Microsoft SQL Server credentials
@@ -1191,7 +616,7 @@ Function Get-SQLJobInfo {
         TrustServerCertificate
         Credential
         IgnoreDisabled
-        SearchName
+        SearchJobName
 
     .OUTPUTS
         System.Array
@@ -1216,22 +641,23 @@ Function Get-SQLJobInfo {
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
     # Add Credentials if requested
-        if($null -ne $Credential){$SQLParams.Credential = $Credential}
+        if($Credential.count -gt 0){$SQLParams += @{Credential = $Credential}}
 
     # Script to look up sessions
         $sql = "
+USE msdb
 select
-    @@ServerName as [ServerInstance]
-    ,j.job_id as [JobID]
-    ,j.name as [JobName]
-    ,iif(j.enabled=1,'Yes','No') as [JobEnabled]
-	,c.name as [JobCategory]
-	,j.description as [Description]
-	,j.date_created AS [JobCreatedOn]
-    ,j.date_modified AS [JobLastModifiedOn]
-	,iif(sSCH.schedule_uid is not NULL,'Yes','No') AS [IsScheduled]
-    ,sSCH.schedule_uid AS [JobScheduleID]
-    ,sSCH.name AS [JobScheduleName]
+    @@ServerName as 'ServerInstance'
+    ,j.job_id as 'JobID'
+    ,j.name as 'JobName'
+    ,iif(j.enabled=1,'Yes','No') as 'JobEnabled'
+	,c.name as 'JobCategory'
+	,j.description as 'Description'
+	,j.date_created AS 'JobCreatedOn'
+    ,j.date_modified AS 'JobLastModifiedOn'
+	,iif(sSCH.schedule_uid is not NULL,'Yes','No') AS 'IsScheduled'
+    ,sSCH.schedule_uid AS 'JobScheduleID'
+    ,sSCH.name AS 'JobScheduleName'
 
 	, case sSCH.freq_type when 1 then 'One time only'
                  when 4 then 'Daily'
@@ -1296,29 +722,29 @@ when sSCH.freq_subday_type in (2,4,8) then 'Every ' + convert(varchar(10), sSCH.
         WHEN 1 THEN 'On Success'
         WHEN 2 THEN 'On Failure'
         WHEN 3 THEN 'On Completion'
-    END AS [JobDeletionCriterion]
-    ,sx.step_id as [StepNumber]
-    ,sx.step_name as [StepName]
-	,sx.step_uid as [StepID]
-    ,sx.subsystem as [StepType]
-	,sx.database_name as [StepDataBase]
-	,sPROX.name AS [RunAs]
+    END AS 'JobDeletionCriterion'
+    ,sx.step_id as 'StepNumber'
+    ,sx.step_name as 'StepName'
+	,sx.step_uid as 'StepID'
+    ,sx.subsystem as 'StepType'
+	,sx.database_name as 'StepDataBase'
+	,sPROX.name AS 'RunAs'
     ,case
         when charindex('/FILE `"\`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/FILE `"',sx.command,1)+9,charindex('.dtsx',sx.command,charindex('/FILE `"',sx.command,1))-5)
         when charindex('/FILE',sx.command,1) > 0 and charindex('.dtsx`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/FILE `"',sx.command,1)+7,charindex('.dtsx',sx.command,charindex('/FILE `"',sx.command,1))-3)
         when charindex('/ISSERVER `"\`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/ISSERVER `"\`"',sx.command,1)+13,charindex('.dtsx',sx.command,charindex('/ISSERVER `"\`"',sx.command,1))-9)
         else null
-    end as [StepDTSXFileName]
+    end as 'StepDTSXFileName'
     ,case
         when charindex('/CONFIGFILE `"\`"',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/CONFIGFILE `"\`"',sx.command,1)+15,charindex('.dtsConfig',sx.command,1)-charindex('/CONFIGFILE `"\`"',sx.command,1)-5)
         when charindex('/CONFIGFILE',sx.command,1) > 0 then SUBSTRING(sx.command,charindex('/CONFIGFILE `"\`"',sx.command,1)+13,charindex('.dtsConfig',sx.command,charindex('/CONFIGFILE `"',sx.command,1)+charindex('/CONFIGFILE `"',sx.command,1)))
         else null
-    end as [StepConfigFileName]
+    end as 'StepConfigFileName'
     ,case
         when sx.last_run_date = 0 then null
         else convert(datetime,msdb.dbo.agent_datetime(sx.last_run_date, sx.Last_run_time))
-    end as [StepLastRunDateTime]
-	,sx.command as [StepCommand]
+    end as 'StepLastRunDateTime'
+	,sx.command as 'StepCommand'
 		,CASE sx.on_success_action
 		WHEN 1 THEN 'Quit the job reporting success'
 		WHEN 2 THEN 'Quit the job reporting failure'
@@ -1327,9 +753,9 @@ when sSCH.freq_subday_type in (2,4,8) then 'Every ' + convert(varchar(10), sSCH.
 					+ QUOTENAME(CAST(sx.on_success_step_id AS VARCHAR(3)))
 					+ ' '
 					+ sOSSTP.step_name
-		END AS [OnSuccessAction]
-	,sx.retry_attempts AS [RetryAttempts]
-	,sx.retry_interval AS [RetryInterval (Minutes)]
+		END AS 'OnSuccessAction'
+	,sx.retry_attempts AS 'RetryAttempts'
+	,sx.retry_interval AS 'RetryInterval (Minutes)'
 	,CASE sx.on_fail_action
 		WHEN 1 THEN 'Quit the job reporting success'
 		WHEN 2 THEN 'Quit the job reporting failure'
@@ -1338,7 +764,7 @@ when sSCH.freq_subday_type in (2,4,8) then 'Every ' + convert(varchar(10), sSCH.
 					+ QUOTENAME(CAST(sx.on_fail_step_id AS VARCHAR(3)))
 					+ ' '
 					+ sOFSTP.step_name
-		END AS [OnFailureAction]
+		END AS 'OnFailureAction'
 from
 	msdb.dbo.sysjobsteps sx
 	inner join msdb.dbo.sysjobs j on sx.job_id = j.job_id
@@ -1347,31 +773,25 @@ from
     left outer join msdb.dbo.sysschedules AS sSCH ON jsch.schedule_id = sSCH.schedule_id
 	left outer join msdb.dbo.sysproxies AS sPROX ON sx.proxy_id = sPROX.proxy_id
 	left outer join msdb.dbo.sysjobsteps AS sOSSTP ON sx.job_id = sOSSTP.job_id AND sx.on_success_step_id = sOSSTP.step_id
-	left outer join msdb.dbo.sysjobsteps AS sOFSTP ON sx.job_id = sOFSTP.job_id AND sx.on_fail_step_id = sOFSTP.step_id
+	left outer join msdb.dbo.sysjobsteps AS sOFSTP ON sx.job_id = sOFSTP.job_id AND sx.on_success_step_id = sOFSTP.step_id
 where
     TRY_CONVERT(uniqueidentifier,j.Name) is null --Remove SSRS jobs
-    AND (@IgnoreDisabled = 0 OR j.enabled = 1)
-    AND (@SearchName = '%' OR j.name LIKE @SearchName OR sx.step_name LIKE @SearchName)
 order by
     j.name,j.job_id,sx.step_id"
-        $SearchPattern = if($SearchName) {$SearchName} else {'%'}
-        $QueryParameters = @{
-            SearchName = $SearchPattern
-            IgnoreDisabled = [int]$IgnoreDisabled.IsPresent
-        }
 
     # Query Jobs
         Write-Verbose "Attempting to retrieve jobs."
-        try{$SQLAgentJobs = @(invoke-sql @SQLParams -query $sql -QueryParameters $QueryParameters)}catch{write-error ("Query Failed, check server instance, certificate, and credentials. " + $_.Exception.Message);throw}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
-        if ($null -eq $SQLAgentJobs -or $SQLAgentJobs.Count -eq 0){Write-Verbose "No SQL Agent jobs found"}else{Write-Verbose ($SQLAgentJobs.Count.ToString() + " job steps found")}
-    # Filters are applied by SQL
-        if($IgnoreDisabled -eq $true){Write-Verbose ("Ignoring disabled jobs.")}
-        if($SearchName.Length -gt 0){Write-Verbose ("Including Name Search: "+$SearchName)}
+        if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
+    # If IgnoreDisabled remove disabled jobs
+        if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoring disabled jobs.")}
+    # If only looking at specific login names remove all but those login names
+        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
     #Output any remaining records
         if ($SQLAgentJobs.count -gt 0){$Final = "Record Count after filters: "+$SQLAgentJobs.count}else{$Final = "Record Count after filters: 0"}
         Write-Verbose  ($final)
-        return @($SQLAgentJobs | Sort-Object -Property JobName)
+        return $SQLAgentJobs | Sort-Object -Property JobName
     }
 }
 
@@ -1384,23 +804,27 @@ Function Get-SQLRunningJobs {
         Get-SQLRunningJobs is a function that returns a list of running Microsoft SQL Server SQL Agent Jobs.  Additional options
         will let you filter the results.
 
+        The Module SQLServer must be installed, the function will test each time it's run and provide the command to
+        install if needed.
+
         ServerInstance can also be passed in the pipeline.
 
-        Selecting -Verbose displays safe connection and query details.
+        Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Microsoft SQL Server host or instance to query.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
-        Enables accepting a server certificate that is not trusted locally. Leave
-        this switch off when certificate validation is required.
+        Newer SQL Server clients will not connect if the server certificate is not
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
+        remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
         is the current user with Integrated Security.
 
     .PARAMETER SearchName
-        If provided, job and step names are filtered with this SQL `LIKE` pattern.
+        If a string is provided Job Names and Step Names will be searched for the string.
 
     .EXAMPLE
         # Using Microsoft SQL Server credentials
@@ -1411,7 +835,7 @@ Function Get-SQLRunningJobs {
         ServerInstance
         TrustServerCertificate
         Credential
-        SearchName
+        SearchJobName
 
     .OUTPUTS
         System.Array
@@ -1435,40 +859,42 @@ Function Get-SQLRunningJobs {
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
     # Add Credentials if requested
-        if($null -ne $Credential){$SQLParams.Credential = $Credential}
+        if($Credential.count -gt 0){$SQLParams += @{Credential = $Credential}}
 
     # Script to look up agent jobs
         $sql = "
-DECLARE @Now datetime = GETDATE();
-SELECT @@servername as [ServerInstance],
-    j.name AS [JobName],
-    j.job_id as [JobId],
-    ISNULL(last_executed_step_id,0)+1 AS [CurrentStep],
-    Js.step_name as [StepName],
-    CONVERT(varchar(10), DATEDIFF_BIG(second, ja.start_execution_date, @Now) / 3600)
-    + ':' + RIGHT('0' + CONVERT(varchar(2), (DATEDIFF_BIG(second, ja.start_execution_date, @Now) % 3600) / 60), 2)
-    + ':' + RIGHT('0' + CONVERT(varchar(2), DATEDIFF_BIG(second, ja.start_execution_date, @Now) % 60), 2)
-    as [JobElapsedTime],
-    ja.start_execution_date as [StartedOn]
+USE msdb
+SELECT @@servername as 'ServerInstance',
+    j.name AS 'JobName',
+    j.job_id as 'JobId',
+    ISNULL(last_executed_step_id,0)+1 AS 'CurrentStep',
+    Js.step_name as 'StepName',
+    (cast(
+        (cast(cast(getdate() as float) - cast(ja.start_execution_date as float) as int) * 24) /* hours over 24 */
+        + datepart(hh, getdate() - ja.start_execution_date) /* hours */
+        as varchar(10))
+    + ':' + right('0' + cast(datepart(mi, getdate() - ja.start_execution_date) as varchar(2)), 2) /* minutes */
+    + ':' + right('0' + cast(datepart(ss, getdate() - ja.start_execution_date) as varchar(2)), 2) /* seconds */
+    ) as 'JobElapsedTime',
+    ja.start_execution_date as 'StartedOn'
 FROM msdb.dbo.sysjobactivity ja
+    LEFT JOIN msdb.dbo.sysjobhistory jh on ja.job_history_id = jh.instance_id
     JOIN msdb.dbo.sysjobs j on ja.job_id = j.job_id
-    LEFT JOIN msdb.dbo.sysjobsteps js on ja.job_id = js.job_id AND ISNULL(ja.last_executed_step_id,0)+1 = js.step_id
+    JOIN msdb.dbo.sysjobsteps js on ja.job_id = js.job_id AND ISNULL(ja.last_executed_step_id,0)+1 = js.step_id
 WHERE
     ja.session_id = (SELECT TOP 1 session_id FROM msdb.dbo.syssessions ORDER BY agent_start_date DESC)
 AND start_execution_date is not null
-AND stop_execution_date is null
-AND (@SearchName = '%' OR j.name LIKE @SearchName OR js.step_name LIKE @SearchName)"
-        $SearchPattern = if($SearchName) {$SearchName} else {'%'}
+AND stop_execution_date is null"
 
     # Query jobs
         Write-Verbose "Attempting to retrieve jobs."
-        try{$SQLAgentJobs = @(invoke-sql @SQLParams -query $sql -QueryParameters @{ SearchName = $SearchPattern })}catch{write-error ("Query Failed, check server instance, certificate, and credentials. " + $_.Exception.Message);throw}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
-        if ($null -eq $SQLAgentJobs -or $SQLAgentJobs.Count -eq 0){Write-Verbose "No SQL Agent jobs found"}else{Write-Verbose ($SQLAgentJobs.Count.ToString() + " jobs found")}
-    # Search filters are applied by SQL
-        if($SearchName.Length -gt 0){Write-Verbose ("Including Name Search: "+$SearchName)}
+        if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s) Found")}
+    # If only looking at specific login names remove all but those login names
+        if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
     #Output any remaining records
-        return @($SQLAgentJobs)
+        return $SQLAgentJobs
     }
 }
 Function Get-SQLJobHistory {
@@ -1480,26 +906,30 @@ Function Get-SQLJobHistory {
         Get-SQLJobHistory is a function that returns a list of Microsoft SQL Server SQL Agent Job History.  Additional options
         will let you filter the results.
 
+        The Module SQLServer must be installed, the function will test each time it's run and provide the command to
+        install if needed.
+
         ServerInstance can also be passed in the pipeline.
 
-        Selecting -Verbose displays safe connection and query details.
+        Selecting -Verbose will display details like the SPID used by the current session.
 
     .PARAMETER ServerInstance
-        The Microsoft SQL Server host or instance to query.
+        The Microsoft SQL Server host to query for sessions.
 
     .PARAMETER TrustServerCertificate
-        Enables accepting a server certificate that is not trusted locally. Leave
-        this switch off when certificate validation is required.
+        Newer SQL Server clients will not connect if the server certificate is not
+        stored locally.  Older SQL Clients will not work with this parameter so using "-TrustServerCertificate $false" will
+        remove this parameter.
 
     .PARAMETER Credential
         Specifies a user account that has permission to perform this action. The default
         is the current user with Integrated Security.
 
     .PARAMETER IgnoreDisabled
-        If specified, disabled jobs are excluded from the results.
+        If IgnoreDisabled is true then disabled jobs will be excluded from the results
 
     .PARAMETER SearchName
-        If provided, job names are filtered with this SQL `LIKE` pattern. If omitted, all job history is returned.
+        If a string is provided Job Names and Step Names will be searched for the string.
 
     .EXAMPLE
         # Using Microsoft SQL Server credentials
@@ -1511,7 +941,7 @@ Function Get-SQLJobHistory {
         TrustServerCertificate
         Credential
         IgnoreDisabled
-        SearchName
+        SearchJobName
 
     .OUTPUTS
         System.Array
@@ -1536,15 +966,16 @@ Function Get-SQLJobHistory {
     # Add Trust Server Certificate if requested
         if($TrustServerCertificate -eq $true){$SQLParams += @{TrustServerCertificate = $true}}
     # Add Credentials if requested
-        if($null -ne $Credential){$SQLParams.Credential = $Credential}
+        if($Credential.count -gt 0){$SQLParams += @{Credential = $Credential}}
 
     # Script to look up sessions
         $sql = "
-SELECT
-@@ServerName as [ServerInstance]
-,J.name as [JobName]
-,iif(j.enabled=1, 'Yes','No') as [JobEnabled]
-,H.message as [Message]
+USE msdb
+SELECT distinct
+@@ServerName as 'ServerInstance'
+,J.name as 'JobName'
+,iif(j.enabled=1, 'Yes','No') as 'JobEnabled'
+,H.message as 'Message'
 ,run_status = CASE H.run_status
                 WHEN 0 THEN 'Failed'
                 WHEN 1 THEN 'Succeeded'
@@ -1552,33 +983,33 @@ SELECT
                 WHEN 3 THEN 'Canceled'
                 WHEN 4 THEN 'In progress'
             END
-, msdb.dbo.agent_datetime(h.run_date, h.run_time) as [StartDateTime]
-,CONVERT(varchar(10), H.run_duration / 10000)
-    + ':' + RIGHT('0' + CONVERT(varchar(2), (H.run_duration % 10000) / 100), 2)
-    + ':' + RIGHT('0' + CONVERT(varchar(2), H.run_duration % 100), 2) as [Duration_H-M-S]
-,convert(int, substring(right('00000000'+ltrim(rtrim(convert(varchar(10), H.run_duration))), 8), 7,2)) + convert(int, substring(right('00000000'+ltrim(rtrim(convert(varchar(10), H.run_duration))), 8), 5,2)) * 60 + convert(int, substring(right( '00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))), 8),1,4)) * 3600 as [DurationSeconds]
+, msdb.dbo.agent_datetime(h.run_date, h.run_time) as 'StartDateTime'
+,iif(H.run_duration > 9999, format(H.run_duration, '####:##:00'), format(H.run_duration, '##:00')) as 'Duration_H-M-S'
+,convert(int, substring(right('00000000'+ltrim(rtrim(convert(varchar(10), H.run_duration))), 8), 7,2)) + convert(int, substring(right('00000000'+ltrim(rtrim(convert(varchar(10), H.run_duration))), 8), 5,2)) * 60 + convert(int, substring(right( '00000000'+ltrim(rtrim(convert(varchar(10),H.run_duration))), 8),1,4)) * 3600 as 'DurationSeconds'
 FROM
-msdb.dbo.sysjobs J
-INNER JOIN msdb.dbo.sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
+sysjobs J
+INNER JOIN sysjobhistory H ON J.job_id = H.job_id and h.step_id = 0
 where
 j.name like @SearchName
 ORDER BY
 J.Name asc,h.run_date desc, h.run_time desc
     "
-        $SearchPattern = if($SearchName) {$SearchName} else {'%'}
 
     # Query Jobs
         Write-Verbose "Attempting to retreive jobs."
         Write-Verbose $sql
-        try{$SQLAgentJobs = @(invoke-sql @SQLParams -query $sql -QueryParameters @{ SearchName = $SearchPattern })}catch{write-error ("Query Failed, check server instance, certificate, and credentials. " + $_.Exception.Message);throw}
+        try{$SQLAgentJobs = invoke-sql @SQLParams -query $sql -QueryParameters @{ SearchName = $SearchName } -ErrorAction SilentlyContinue}catch{write-error "Query Failed, check server instance, certificate, and credentials.";throw}
     # If nothing returned allow for verbose message
-        if ($null -eq $SQLAgentJobs -or $SQLAgentJobs.Count -eq 0){Write-Verbose "No SQL Agent jobs found"}else{Write-Verbose ($SQLAgentJobs.Count.ToString() + " job steps found")}
+        if ($SQLAgentJobs.count -lt 0){Write-Verbose "No SQL Agent Job(s) found"}else{Write-Verbose ($SQLAgentJobs.count.ToString() + " Jobs(s)/Step(s) Found")}
     # If IgnoreDiabled remove disabled jobs
-        if($IgnoreDisabled.IsPresent){$SQLAgentJobs = $SQLAgentJobs | Where-Object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoring disabled jobs.")}
-    # Output any remaining records
+        if($IgnoreDisabled -eq $true){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobEnabled -eq "Yes"};Write-Verbose ("Ignoreing disabled jobs.")}
+    # # If only looking at specific login names remove all but those login names
+    # Removed so you can target jobs by name only
+    #     if($SearchName.Length -gt 0){$SQLAgentJobs = $SQLAgentJobs | where-object {$_.JobName -like $SearchName -or $_.stepName -like $SearchName} ;Write-Verbose ("Including Name Search: "+$SearchName)}
+    #Ouput any remaining records
         if ($SQLAgentJobs.count -gt 0){$Final = "Record Count after filters: "+$SQLAgentJobs.count}else{$Final = "Record Count after filters: 0"}
         Write-Verbose  ($final)
-        return @($SQLAgentJobs | Sort-Object -Property JobName)
+        return $SQLAgentJobs | Sort-Object -Property JobName
     }
 }
 function Format-ColorBar {
@@ -1590,11 +1021,10 @@ function Format-ColorBar {
         Creates a text based percent bar as a string.
 
     .PARAMETER Width
-        Width of the output string in characters, from 1 through 1,000.
-        Defaults to 10.
+        Width of the output string, defaults to 10.
 
     .PARAMETER Percent
-        Percentage of the bar to fill, from 0 through 100.
+        Percent of the bar to fill.
 
     .PARAMETER ForegroundColor
         Color of the bar, defaults to screen font color.
@@ -1615,11 +1045,8 @@ function Format-ColorBar {
         Email: dallenva@gmail.com
     #>
     Param(
-        [ValidateRange(1, 1000)]
         [int32]$Width = 10,
-        [ValidateRange(0, 100)]
         [decimal]$Percent,
-        [ValidateSet('Black','Blue','Cyan','DarkBlue','DarkCyan','DarkGray','DarkGreen','DarkMagenta','DarkRed','DarkYellow','Gray','Green','Magenta','Red','White','Yellow')]
         [string]$ForegroundColor
     )
     Process {
@@ -1627,6 +1054,6 @@ function Format-ColorBar {
         $Output = ('').padright($Display,"█")
         $Output += ('').padright($Width - $Display,"░")
         If ($ForegroundColor.Length -gt 0){$Output = $PSStyle.Foreground.$ForegroundColor + $Output + $PSStyle.Reset}
-        $Output
+        return $Output
     }
 }
